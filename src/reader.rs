@@ -225,7 +225,7 @@ impl PyReader {
             | Kind::List
             | Kind::Dict
             | Kind::Set
-            | Kind::Frozenset
+            | Kind::FrozenSet
             | Kind::Code
                 if flag =>
             {
@@ -370,10 +370,10 @@ impl PyReader {
 
                 Some(Object::Set(value))
             }
-            Kind::Frozenset => {
+            Kind::FrozenSet => {
                 let length = self.r_long()?;
                 let value = Object::FrozenSet(
-                    self.r_vec(length as usize, Kind::Frozenset)?
+                    self.r_vec(length as usize, Kind::FrozenSet)?
                         .into_iter()
                         .map(|o| match ObjectHashable::try_from(o) {
                             Ok(obj) => Ok(obj),

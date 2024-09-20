@@ -1,5 +1,6 @@
 mod error;
 mod reader;
+mod writer;
 
 use bitflags::bitflags;
 use error::Error;
@@ -9,6 +10,7 @@ use num_complex::Complex;
 use num_derive::{FromPrimitive, ToPrimitive};
 use ordered_float::OrderedFloat;
 use reader::PyReader;
+use writer::PyWriter;
 use std::{
     collections::{HashMap, HashSet},
     sync::{Arc, RwLock},
@@ -43,7 +45,7 @@ pub enum Kind {
     Unicode            = b'u',
     Unknown            = b'?',
     Set                = b'<',
-    Frozenset          = b'>',
+    FrozenSet          = b'>',
     ASCII              = b'a',
     ASCIIInterned      = b'A',
     SmallTuple         = b')',
@@ -177,6 +179,34 @@ impl TryFrom<Object> for ObjectHashable {
     }
 }
 
+impl From<ObjectHashable> for Object {
+    fn from(obj: ObjectHashable) -> Self {
+        match obj {
+            ObjectHashable::None => Object::None,
+            ObjectHashable::StopIteration => Object::StopIteration,
+            ObjectHashable::Ellipsis => Object::Ellipsis,
+            ObjectHashable::Bool(b) => Object::Bool(b),
+            ObjectHashable::Long(i) => Object::Long(i),
+            ObjectHashable::Float(f) => Object::Float(f.into_inner()),
+            ObjectHashable::Complex(c) => Object::Complex(Complex {
+                re: c.re.into_inner(),
+                im: c.im.into_inner(),
+            }),
+            ObjectHashable::Bytes(b) => Object::Bytes(b),
+            ObjectHashable::String(s) => Object::String(s),
+            ObjectHashable::Tuple(t) => Object::Tuple(
+                t.iter()
+                    .map(|o| Object::from(o.clone()))
+                    .collect::<Vec<_>>()
+                    .into(),
+            ),
+            ObjectHashable::FrozenSet(s) => Object::FrozenSet(
+                s.iter().cloned().collect::<HashSet<_>>().into(),
+            ),
+        }
+    }
+}
+
 pub fn load_bytes(data: &[u8], python_version: PyVersion) -> anyhow::Result<Object> {
     if python_version < (3, 0) {
         return Err(anyhow::anyhow!("Python 2.x is not supported"));
@@ -187,6 +217,16 @@ pub fn load_bytes(data: &[u8], python_version: PyVersion) -> anyhow::Result<Obje
     let object = py_reader.read_object()?;
 
     Ok(object)
+}
+
+pub fn dump_bytes(obj: Object, python_version: PyVersion, marshal_version: u8) -> anyhow::Result<Vec<u8>> {
+    if python_version < (3, 0) {
+        return Err(anyhow::anyhow!("Python 2.x is not supported"));
+    }
+
+    let mut py_writer = PyWriter::new(python_version, marshal_version);
+
+    Ok(py_writer.write_object(Some(obj)))
 }
 
 #[cfg(test)]
@@ -412,7 +452,7 @@ mod tests {
 
         let code = Arc::into_inner(extract_object!(Some(kind), Object::Code(code) => code, Error::UnexpectedObject)
             .unwrap()).unwrap();
-
+        
         match code {
             Code::V310(code) => {
                 assert_eq!(code.argcount, 2);
@@ -433,5 +473,194 @@ mod tests {
                 assert_eq!(code.lnotab.len(), 2);
             }
         }
+    }
+
+    #[test]
+    fn test_dump_long() {
+        // 1
+        let data = b"\xe9\x01\x00\x00\x00";
+        let object = Object::Long(BigInt::from(1).into());
+        let dumped = dump_bytes(object, (3, 10), 4).unwrap();
+        assert_eq!(data.to_vec(), dumped);
+    }
+
+    #[test]
+    fn test_dump_float() {
+        // 1.0
+        let data = b"\xe7\x00\x00\x00\x00\x00\x00\xf0?";
+        let object = Object::Float(1.0);
+        let dumped = dump_bytes(object, (3, 10), 4).unwrap();
+        assert_eq!(data.to_vec(), dumped);
+    }
+
+    #[test]
+    fn test_dump_complex() {
+        // 3 + 4j
+        let data = b"\xf9\x00\x00\x00\x00\x00\x00\x08@\x00\x00\x00\x00\x00\x00\x10@";
+        let object = Object::Complex(Complex::new(3.0, 4.0));
+        let dumped = dump_bytes(object, (3, 10), 4).unwrap();
+        assert_eq!(data.to_vec(), dumped);
+    }
+
+    #[test]
+    fn test_dump_bytes() {
+        // b"test"
+        let data = b"\xf3\x04\x00\x00\x00test";
+        let object = Object::Bytes("test".as_bytes().to_vec().into());
+        let dumped = dump_bytes(object, (3, 10), 4).unwrap();
+        assert_eq!(data.to_vec(), dumped);
+    }
+
+    #[test]
+    fn test_dump_string() {
+        // "test"
+        let data = b"\xfa\x04test";
+        let object = Object::String("test".to_string().into());
+        let dumped = dump_bytes(object, (3, 10), 4).unwrap();
+        assert_eq!(data.to_vec(), dumped);
+    }
+
+    #[test]
+    fn test_dump_tuple() {
+        // Empty tuple
+        let data = b"\xa9\x00";
+        let object = Object::Tuple(vec![].into());
+        let dumped = dump_bytes(object, (3, 10), 4).unwrap();
+        assert_eq!(data.to_vec(), dumped);
+
+        // Tuple with two elements ("a", "b")
+        let data = b"\xa9\x02\xfa\x01a\xfa\x01b";
+        let object = Object::Tuple(vec![Object::String("a".to_string().into()), Object::String("b".to_string().into())].into());
+        let dumped = dump_bytes(object, (3, 10), 4).unwrap();
+        assert_eq!(data.to_vec(), dumped);
+    }
+
+    #[test]
+    fn test_dump_list() {
+        // Empty list
+        let data = b"\xdb\x00\x00\x00\x00";
+        let object = Object::List(RwLock::new(vec![]).into());
+        let dumped = dump_bytes(object, (3, 10), 4).unwrap();
+        assert_eq!(data.to_vec(), dumped);
+
+        // List with two elements ("a", "b")
+        let data = b"\xdb\x02\x00\x00\x00\xfa\x01a\xfa\x01b";
+        let object = Object::List(RwLock::new(vec![Object::String("a".to_string().into()), Object::String("b".to_string().into())]).into());
+        let dumped = dump_bytes(object, (3, 10), 4).unwrap();
+        assert_eq!(data.to_vec(), dumped);
+    }
+
+    #[test]
+    fn test_dump_dict() {
+        // Empty dict
+        let data = b"\xfb0";
+        let object = Object::Dict(RwLock::new(HashMap::new()).into());
+        let dumped = dump_bytes(object, (3, 10), 4).unwrap();
+        assert_eq!(data.to_vec(), dumped);
+
+        // Dict with two elements {"a": "b", "c": "d"}
+        let data = b"\xfb\xfa\x01a\xfa\x01b\xfa\x01c\xfa\x01d0";
+        let object = Object::Dict(RwLock::new({
+            let mut map = HashMap::new();
+            map.insert(ObjectHashable::String("a".to_string().into()), Object::String("b".to_string().into()));
+            map.insert(ObjectHashable::String("c".to_string().into()), Object::String("d".to_string().into()));
+            map
+        }).into());
+        let dumped = dump_bytes(object, (3, 10), 4).unwrap();
+        assert_eq!(data.to_vec(), dumped);
+    }
+
+    #[test]
+    fn test_dump_set() {
+        // Empty set
+        let data = b"\xbc\x00\x00\x00\x00";
+        let object = Object::Set(RwLock::new(HashSet::new()).into());
+        let dumped = dump_bytes(object, (3, 10), 4).unwrap();
+        assert_eq!(data.to_vec(), dumped);
+
+        // Set with two elements {"a", "b"}
+        let data = b"\xbc\x02\x00\x00\x00\xfa\x01a\xfa\x01b";
+        let object = Object::Set(RwLock::new({
+            let mut set = HashSet::new();
+            set.insert(ObjectHashable::String("a".to_string().into()));
+            set.insert(ObjectHashable::String("b".to_string().into()));
+            set
+        }).into());
+        let dumped = dump_bytes(object, (3, 10), 4).unwrap();
+        assert_eq!(data.to_vec(), dumped);
+    }
+
+    #[test]
+    fn test_dump_frozenset() {
+        // Empty frozenset
+        let data = b"\xbe\x00\x00\x00\x00";
+        let object = Object::FrozenSet(HashSet::new().into());
+        let dumped = dump_bytes(object, (3, 10), 4).unwrap();
+        assert_eq!(data.to_vec(), dumped);
+
+        // Frozenset with two elements {"a", "b"}
+        let data1 = b"\xbe\x02\x00\x00\x00\xfa\x01a\xfa\x01b"; // Order is not guaranteed
+        let data2 = b"\xbe\x02\x00\x00\x00\xfa\x01b\xfa\x01a";
+        let object = Object::FrozenSet({
+            let mut set = HashSet::new();
+            set.insert(ObjectHashable::String("a".to_string().into()));
+            set.insert(ObjectHashable::String("b".to_string().into()));
+            set
+        }.into());
+        let dumped = dump_bytes(object, (3, 10), 4).unwrap();
+        assert!(data1.to_vec() == dumped || data2.to_vec() == dumped || data2.to_vec() == dumped);
+    }
+
+    #[test]
+    fn test_dump_code() {
+        // def f(arg1, arg2=None): print(arg1, arg2)
+        let data = b"\xe3\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x03\x00\x00\x00C\x00\x00\x00s\x0e\x00\x00\x00t\x00|\x00|\x01\x83\x02\x01\x00d\x00S\x00\xa9\x01N)\x01\xda\x05print)\x02Z\x04arg1Z\x04arg2\xa9\x00r\x03\x00\x00\x00\xfa\x07<stdin>\xda\x01f\x01\x00\x00\x00s\x02\x00\x00\x00\x0e\x00";
+        let object = Code::V310(
+            Code310 {
+                argcount: 2,
+                posonlyargcount: 0,
+                kwonlyargcount: 0,
+                nlocals: 2,
+                stacksize: 3,
+                flags: CodeFlags::from_bits_truncate(0x43),
+                code: vec![
+                    116,
+                    0,
+                    124,
+                    0,
+                    124,
+                    1,
+                    131,
+                    2,
+                    1,
+                    0,
+                    100,
+                    0,
+                    83,
+                    0,
+                ].into(),
+                consts: [
+                    Object::None,
+                ].to_vec().into(),
+                names: [
+                    "print".to_string().into(),
+                ].to_vec().into(),
+                varnames: [
+                    "arg1".to_string().into(),
+                    "arg2".to_string().into(),
+                ].to_vec().into(),
+                freevars: [].to_vec(),
+                cellvars: [].to_vec(),
+                filename: "<stdin>".to_string().into(),
+                name: "f".to_string().into(),
+                firstlineno: 1,
+                lnotab: [
+                    14,
+                    0,
+                ].to_vec().into(),
+            },
+        );
+        let dumped = dump_bytes(Object::Code(Arc::new(object)), (3, 10), 4).unwrap();
+        assert_eq!(data.to_vec(), dumped);
     }
 }
