@@ -1,0 +1,14 @@
+[package]
+name = "python_marshal"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.88"
+bitflags = "2.6.0"
+hashable = "0.0.0"
+num-bigint = "0.4.6"
+num-complex = "0.4.6"
+num-derive = "0.4.2"
+num-traits = "0.2.19"
+ordered-float = "4.2.2"
