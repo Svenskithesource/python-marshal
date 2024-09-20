@@ -18,24 +18,89 @@ pub struct PyReader {
     version: PyVersion,
 }
 
+#[macro_export]
 macro_rules! extract_object {
     ($self:expr, $variant:pat => $binding:ident, $err:expr) => {
-        match $self.r_object()?.ok_or_else(|| $err)? {
-            $variant => $binding,
-            x => bail!(Error::InvalidObject(x)),
+        match $self.ok_or_else(|| $err) {
+            Ok(val) => match val {
+                $variant => Ok($binding),
+                x => Err(crate::error::Error::InvalidObject(x)),
+            },
+            Err(e) => Err(e),
         }
     };
 }
 
-macro_rules! extract_strings {
-    ($self:expr, $objs:expr) => {
+#[macro_export]
+macro_rules! extract_strings_tuple {
+    ($objs:expr) => {
         $objs
             .iter()
             .map(|o| match o {
                 Object::String(string) => Ok(string.clone()),
-                _ => bail!(Error::UnexpectedObject),
+                _ => Err(Error::UnexpectedObject),
             })
-            .collect::<Result<Vec<_>, _>>()?
+            .collect::<Result<Vec<_>, _>>()
+    };
+}
+
+#[macro_export]
+macro_rules! extract_strings_list {
+    ($objs:expr) => {
+        $objs
+            .read()
+            .unwrap()
+            .iter()
+            .map(|o| match o {
+                Object::String(string) => Ok(string.clone()),
+                _ => Err(Error::UnexpectedObject),
+            })
+            .collect::<Result<Vec<_>, _>>()
+    };
+}
+
+#[macro_export]
+macro_rules! extract_strings_set {
+    ($objs:expr) => {
+        $objs
+            .read()
+            .unwrap()
+            .iter()
+            .map(|o| match o {
+                ObjectHashable::String(string) => Ok(string.clone()),
+                _ => Err(Error::UnexpectedObject),
+            })
+            .collect::<Result<HashSet<_>, _>>()
+    };
+}
+
+#[macro_export]
+macro_rules! extract_strings_frozenset {
+    ($objs:expr) => {
+        $objs
+            .iter()
+            .map(|o| match o {
+                ObjectHashable::String(string) => Ok(string.clone()),
+                _ => Err(Error::UnexpectedObject),
+            })
+            .collect::<Result<HashSet<_>, _>>()
+    };
+}
+
+#[macro_export]
+macro_rules! extract_strings_dict {
+    ($objs:expr) => {
+        $objs
+            .read()
+            .unwrap()
+            .iter()
+            .map(|(k, v)| match (k, v) {
+                (ObjectHashable::String(key), Object::String(value)) => {
+                    Ok((key.clone(), value.clone()))
+                }
+                _ => Err(Error::UnexpectedObject),
+            })
+            .collect::<Result<HashMap<_, _>, _>>()
     };
 }
 
@@ -122,14 +187,18 @@ impl PyReader {
     }
 
     fn r_hashmap(&mut self) -> anyhow::Result<HashMap<ObjectHashable, Object>> {
-        let length = self.r_long()?;
-        let mut map = HashMap::with_capacity(length as usize);
+        let mut map = HashMap::new();
 
-        for _ in 0..length {
-            let key = self.r_object()?.ok_or_else(|| Error::NullInTuple)?;
-            let value = self.r_object()?.ok_or_else(|| Error::NullInTuple)?;
-
-            map.insert(key.into(), value);
+        loop {
+            match self.r_object()? {
+                None => break,
+                Some(key) => match self.r_object()? {
+                    None => break,
+                    Some(value) => {
+                        map.insert(ObjectHashable::try_from(key)?, value);
+                    }
+                },
+            }
         }
 
         Ok(map)
@@ -147,6 +216,7 @@ impl PyReader {
         let code = self.r_u8()?;
 
         let flag = (code & Kind::FlagRef as u8) != 0;
+
         let obj_kind = Kind::from_u8(code & !(Kind::FlagRef as u8)).unwrap();
 
         let mut idx: Option<usize> = match obj_kind {
@@ -285,8 +355,11 @@ impl PyReader {
                 let value = RwLock::new(
                     self.r_vec(length as usize, Kind::Set)?
                         .into_iter()
-                        .map(|o| o.into())
-                        .collect::<HashSet<_>>(),
+                        .map(|o| match ObjectHashable::try_from(o) {
+                            Ok(obj) => Ok(obj),
+                            Err(_) => Err(Error::UnexpectedObject),
+                        })
+                        .collect::<Result<HashSet<_>, _>>()?,
                 )
                 .into();
 
@@ -300,12 +373,16 @@ impl PyReader {
             Kind::Frozenset => {
                 let length = self.r_long()?;
                 let value = Object::FrozenSet(
-                    self.r_vec(length as usize, Kind::Set)?
+                    self.r_vec(length as usize, Kind::Frozenset)?
                         .into_iter()
-                        .map(|o| o.into())
-                        .collect::<HashSet<_>>()
+                        .map(|o| match ObjectHashable::try_from(o) {
+                            Ok(obj) => Ok(obj),
+                            Err(_) => Err(Error::UnexpectedObject),
+                        })
+                        .collect::<Result<HashSet<_>, _>>()?
                         .into(),
-                );
+                )
+                .into();
 
                 Some(value)
             }
@@ -318,30 +395,25 @@ impl PyReader {
                         let nlocals = self.r_long()?;
                         let stacksize = self.r_long()?;
                         let flags = CodeFlags::from_bits_truncate(self.r_long()? as u32);
-                        let code = extract_object!(self, Object::Bytes(bytes) => bytes, Error::NullInTuple);
-                        let consts =
-                            extract_object!(self, Object::Tuple(objs) => objs, Error::NullInTuple);
-                        let names = extract_strings!(
-                            self,
-                            extract_object!(self, Object::Tuple(objs) => objs, Error::NullInTuple)
-                        );
+                        let code = extract_object!(self.r_object()?, Object::Bytes(bytes) => bytes, Error::NullInTuple)?;
+                        let consts = extract_object!(self.r_object()?, Object::Tuple(objs) => objs, Error::NullInTuple)?;
+                        let names = extract_strings_tuple!(
+                            extract_object!(self.r_object()?, Object::Tuple(objs) => objs, Error::NullInTuple)?
+                        )?;
 
-                        let varnames = extract_strings!(
-                            self,
-                            extract_object!(self, Object::Tuple(objs) => objs, Error::NullInTuple)
-                        );
-                        let freevars = extract_strings!(
-                            self,
-                            extract_object!(self, Object::Tuple(objs) => objs, Error::NullInTuple)
-                        );
-                        let cellvars = extract_strings!(
-                            self,
-                            extract_object!(self, Object::Tuple(objs) => objs, Error::NullInTuple)
-                        );
-                        let filename = extract_object!(self, Object::String(string) => string, Error::UnexpectedObject);
-                        let name = extract_object!(self, Object::String(string) => string, Error::UnexpectedObject);
+                        let varnames = extract_strings_tuple!(
+                            extract_object!(self.r_object()?, Object::Tuple(objs) => objs, Error::NullInTuple)?
+                        )?;
+                        let freevars = extract_strings_tuple!(
+                            extract_object!(self.r_object()?, Object::Tuple(objs) => objs, Error::NullInTuple)?
+                        )?;
+                        let cellvars = extract_strings_tuple!(
+                            extract_object!(self.r_object()?, Object::Tuple(objs) => objs, Error::NullInTuple)?
+                        )?;
+                        let filename = extract_object!(self.r_object()?, Object::String(string) => string, Error::UnexpectedObject)?;
+                        let name = extract_object!(self.r_object()?, Object::String(string) => string, Error::UnexpectedObject)?;
                         let firstlineno = self.r_long()?;
-                        let lnotab = extract_object!(self, Object::Bytes(bytes) => bytes, Error::NullInTuple);
+                        let lnotab = extract_object!(self.r_object()?, Object::Bytes(bytes) => bytes, Error::NullInTuple)?;
 
                         Object::Code(Arc::new(Code::V310(Code310 {
                             argcount: argcount.try_into().unwrap(),

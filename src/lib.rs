@@ -2,6 +2,7 @@ mod error;
 mod reader;
 
 use bitflags::bitflags;
+use error::Error;
 use hashable::HashableHashSet;
 use num_bigint::BigInt;
 use num_complex::Complex;
@@ -145,31 +146,33 @@ pub enum ObjectHashable {
     FrozenSet (Arc<HashableHashSet<ObjectHashable>>),
 }
 
-impl From<Object> for ObjectHashable {
-    fn from(obj: Object) -> Self {
+impl TryFrom<Object> for ObjectHashable {
+    type Error = Error;
+
+    fn try_from(obj: Object) -> Result<Self, Self::Error> {
         match obj {
-            Object::None => ObjectHashable::None,
-            Object::StopIteration => ObjectHashable::StopIteration,
-            Object::Ellipsis => ObjectHashable::Ellipsis,
-            Object::Bool(b) => ObjectHashable::Bool(b),
-            Object::Long(i) => ObjectHashable::Long(i),
-            Object::Float(f) => ObjectHashable::Float(f.into()),
-            Object::Complex(c) => ObjectHashable::Complex(Complex {
+            Object::None => Ok(ObjectHashable::None),
+            Object::StopIteration => Ok(ObjectHashable::StopIteration),
+            Object::Ellipsis => Ok(ObjectHashable::Ellipsis),
+            Object::Bool(b) => Ok(ObjectHashable::Bool(b)),
+            Object::Long(i) => Ok(ObjectHashable::Long(i)),
+            Object::Float(f) => Ok(ObjectHashable::Float(f.into())),
+            Object::Complex(c) => Ok(ObjectHashable::Complex(Complex {
                 re: OrderedFloat(c.re),
                 im: OrderedFloat(c.im),
-            }),
-            Object::Bytes(b) => ObjectHashable::Bytes(b),
-            Object::String(s) => ObjectHashable::String(s),
-            Object::Tuple(t) => ObjectHashable::Tuple(
+            })),
+            Object::Bytes(b) => Ok(ObjectHashable::Bytes(b)),
+            Object::String(s) => Ok(ObjectHashable::String(s)),
+            Object::Tuple(t) => Ok(ObjectHashable::Tuple(
                 t.iter()
-                    .map(|o| ObjectHashable::from(o.clone()))
+                    .map(|o| ObjectHashable::try_from(o.clone()).unwrap())
                     .collect::<Vec<_>>()
                     .into(),
-            ),
-            Object::FrozenSet(s) => {
-                ObjectHashable::FrozenSet(s.iter().cloned().collect::<HashableHashSet<_>>().into())
-            }
-            _ => panic!("unhashable type"),
+            )),
+            Object::FrozenSet(s) => Ok(ObjectHashable::FrozenSet(
+                s.iter().cloned().collect::<HashableHashSet<_>>().into(),
+            )),
+            _ => Err(Error::InvalidObject(obj)),
         }
     }
 }
@@ -188,12 +191,247 @@ pub fn load_bytes(data: &[u8], python_version: PyVersion) -> anyhow::Result<Obje
 
 #[cfg(test)]
 mod tests {
+    use error::Error;
+
     use super::*;
 
     #[test]
-    fn test_load_bytes() {
-        let data = b"\xe3\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x02\x00\x00\x00C\x00\x00\x00s\x0c\x00\x00\x00t\x00|\x00\x83\x01\x01\x00d\x00S\x00)\x01N)\x01\xda\x05print)\x01\xda\x04name\xa9\x00r\x03\x00\x00\x00\xfa\x07<stdin>\xda\x01f\x01\x00\x00\x00s\x02\x00\x00\x00\x0c\x00";
+    fn test_load_long() {
+        // 1
+        let data = b"\xe9\x01\x00\x00\x00";
         let kind = load_bytes(data, (3, 10)).unwrap();
-        dbg!(kind);
+        assert_eq!(
+            extract_object!(Some(kind), Object::Long(num) => num, Error::UnexpectedObject).unwrap(),
+            BigInt::from(1).into()
+        );
+    }
+
+    #[test]
+    fn test_load_float() {
+        // 1.0
+        let data = b"\xe7\x00\x00\x00\x00\x00\x00\xf0?";
+        let kind = load_bytes(data, (3, 10)).unwrap();
+        assert_eq!(
+            extract_object!(Some(kind), Object::Float(num) => num, Error::UnexpectedObject)
+                .unwrap(),
+            1.0
+        );
+    }
+
+    #[test]
+    fn test_load_complex() {
+        // 3 + 4j
+        let data = b"\xf9\x00\x00\x00\x00\x00\x00\x08@\x00\x00\x00\x00\x00\x00\x10@";
+        let kind = load_bytes(data, (3, 10)).unwrap();
+        assert_eq!(
+            extract_object!(Some(kind), Object::Complex(num) => num, Error::UnexpectedObject)
+                .unwrap(),
+            Complex::new(3.0, 4.0)
+        );
+    }
+
+    #[test]
+    fn test_load_bytes() {
+        // b"test"
+        let data = b"\xf3\x04\x00\x00\x00test";
+        let kind = load_bytes(data, (3, 10)).unwrap();
+        assert_eq!(
+            extract_object!(Some(kind), Object::Bytes(bytes) => bytes, Error::UnexpectedObject)
+                .unwrap(),
+            "test".as_bytes().to_vec().into()
+        );
+    }
+
+    #[test]
+    fn test_load_string() {
+        // "test"
+        let data = b"\xda\x04test";
+        let kind = load_bytes(data, (3, 10)).unwrap();
+        assert_eq!(
+            extract_object!(Some(kind), Object::String(string) => string, Error::UnexpectedObject)
+                .unwrap(),
+            "test".to_string().into()
+        );
+    }
+
+    #[test]
+    fn test_load_tuple() {
+        // Empty tuple
+        let data = b"\xa9\x00";
+        let kind = load_bytes(data, (3, 10)).unwrap();
+        assert_eq!(
+            extract_strings_tuple!(
+                extract_object!(Some(kind), Object::Tuple(tuple) => tuple, Error::UnexpectedObject)
+                    .unwrap()
+            )
+            .unwrap(),
+            vec![]
+        );
+
+        // Tuple with two elements ("a", "b")
+        let data = b"\xa9\x02\xda\x01a\xda\x01b";
+        let kind = load_bytes(data, (3, 10)).unwrap();
+        assert_eq!(
+            extract_strings_tuple!(
+                extract_object!(Some(kind), Object::Tuple(tuple) => tuple, Error::UnexpectedObject)
+                    .unwrap()
+            )
+            .unwrap(),
+            vec!["a".to_string().into(), "b".to_string().into()]
+        );
+    }
+
+    #[test]
+    fn test_load_list() {
+        // Empty list
+        let data = b"\xdb\x00\x00\x00\x00";
+        let kind = load_bytes(data, (3, 10)).unwrap();
+        assert_eq!(
+            extract_strings_list!(
+                extract_object!(Some(kind), Object::List(list) => list, Error::UnexpectedObject)
+                    .unwrap()
+            )
+            .unwrap(),
+            vec![]
+        );
+
+        // List with two elements ("a", "b")
+        let data = b"\xdb\x02\x00\x00\x00\xda\x01a\xda\x01b";
+        let kind = load_bytes(data, (3, 10)).unwrap();
+        assert_eq!(
+            extract_strings_list!(
+                extract_object!(Some(kind), Object::List(list) => list, Error::UnexpectedObject)
+                    .unwrap()
+            )
+            .unwrap(),
+            vec!["a".to_string().into(), "b".to_string().into()]
+        );
+    }
+
+    #[test]
+    fn test_load_dict() {
+        // Empty dict
+        let data = b"\xfb0";
+        let kind = load_bytes(data, (3, 10)).unwrap();
+        assert_eq!(
+            extract_strings_dict!(
+                extract_object!(Some(kind), Object::Dict(dict) => dict, Error::UnexpectedObject)
+                    .unwrap()
+            )
+            .unwrap(),
+            HashMap::new()
+        );
+
+        // Dict with two elements {"a": "b", "c": "d"}
+        let data = b"\xfb\xda\x01a\xda\x01b\xda\x01c\xda\x01d0";
+        let kind = load_bytes(data, (3, 10)).unwrap();
+        assert_eq!(
+            extract_strings_dict!(
+                extract_object!(Some(kind), Object::Dict(dict) => dict, Error::UnexpectedObject)
+                    .unwrap()
+            )
+            .unwrap(),
+            {
+                let mut map = HashMap::new();
+                map.insert("a".to_string().into(), "b".to_string().into());
+                map.insert("c".to_string().into(), "d".to_string().into());
+                map
+            }
+        );
+    }
+
+    #[test]
+    fn test_load_set() {
+        // Empty set
+        let data = b"\xbc\x00\x00\x00\x00";
+        let kind = load_bytes(data, (3, 10)).unwrap();
+        assert_eq!(
+            extract_strings_set!(
+                extract_object!(Some(kind), Object::Set(set) => set, Error::UnexpectedObject)
+                    .unwrap()
+            )
+            .unwrap(),
+            HashSet::new()
+        );
+
+        // Set with two elements {"a", "b"}
+        let data = b"\xbc\x02\x00\x00\x00\xda\x01b\xda\x01a";
+        let kind = load_bytes(data, (3, 10)).unwrap();
+        assert_eq!(
+            extract_strings_set!(
+                extract_object!(Some(kind), Object::Set(set) => set, Error::UnexpectedObject)
+                    .unwrap()
+            )
+            .unwrap(),
+            {
+                let mut set = HashSet::new();
+                set.insert("a".to_string().into());
+                set.insert("b".to_string().into());
+                set
+            }
+        );
+    }
+
+    #[test]
+    fn test_load_frozenset() {
+        // Empty frozenset
+        let data = b"\xbe\x00\x00\x00\x00";
+        let kind = load_bytes(data, (3, 10)).unwrap();
+        assert_eq!(
+            extract_strings_frozenset!(
+                extract_object!(Some(kind), Object::FrozenSet(set) => set, Error::UnexpectedObject)
+                    .unwrap()
+            )
+            .unwrap(),
+            HashSet::new()
+        );
+
+        // Frozenset with two elements {"a", "b"}
+        let data = b"\xbe\x02\x00\x00\x00\xda\x01b\xda\x01a";
+        let kind = load_bytes(data, (3, 10)).unwrap();
+        assert_eq!(
+            extract_strings_frozenset!(
+                extract_object!(Some(kind), Object::FrozenSet(set) => set, Error::UnexpectedObject)
+                    .unwrap()
+            )
+            .unwrap(),
+            {
+                let mut set = HashSet::new();
+                set.insert("a".to_string().into());
+                set.insert("b".to_string().into());
+                set
+            }
+        );
+    }
+
+    #[test]
+    fn test_load_code() {
+        // def f(arg1, arg2=None): print(arg1, arg2)
+        let data = b"\xe3\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x03\x00\x00\x00C\x00\x00\x00s\x0e\x00\x00\x00t\x00|\x00|\x01\x83\x02\x01\x00d\x00S\x00\xa9\x01N)\x01\xda\x05print)\x02Z\x04arg1Z\x04arg2\xa9\x00r\x03\x00\x00\x00\xfa\x07<stdin>\xda\x01f\x01\x00\x00\x00s\x02\x00\x00\x00\x0e\x00";
+        let kind = load_bytes(data, (3, 10)).unwrap();
+
+        let code = Arc::into_inner(extract_object!(Some(kind), Object::Code(code) => code, Error::UnexpectedObject)
+            .unwrap()).unwrap();
+
+        match code {
+            Code::V310(code) => {
+                assert_eq!(code.argcount, 2);
+                assert_eq!(code.posonlyargcount, 0);
+                assert_eq!(code.kwonlyargcount, 0);
+                assert_eq!(code.nlocals, 2);
+                assert_eq!(code.stacksize, 3);
+                // assert_eq!(code.flags, );
+                assert_eq!(code.code.len(), 14);
+                assert_eq!(code.consts.len(), 1);
+                assert_eq!(code.names.len(), 1);
+                assert_eq!(code.varnames.len(), 2);
+                assert_eq!(code.freevars.len(), 0);
+                assert_eq!(code.cellvars.len(), 0);
+                assert_eq!(code.filename, "<stdin>".to_string().into());
+                assert_eq!(code.name, "f".to_string().into());
+                assert_eq!(code.firstlineno, 1);
+                assert_eq!(code.lnotab.len(), 2);
+            }
+        }
     }
 }
