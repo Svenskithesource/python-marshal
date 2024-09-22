@@ -157,21 +157,18 @@ impl PyWriter {
                 }
             }
             Some(Object::List(value)) => {
-                let read = value.read().unwrap();
-                let size = read.len();
+                let size = value.len();
 
                 self.w_kind(Kind::List);
                 self.w_long(size as i32);
 
-                for item in read.iter() {
+                for item in value.iter() {
                     self.w_object(Some(item.clone()));
                 }
             }
             Some(Object::Dict(value)) => {
-                let read = value.read().unwrap();
-
                 self.w_kind(Kind::Dict);
-                for (key, value) in read.iter() {
+                for (key, value) in value.iter() {
                     self.w_object(Some(key.clone().into()));
                     self.w_object(Some(value.clone()));
                 }
@@ -179,13 +176,12 @@ impl PyWriter {
                 self.w_u8(Kind::Null as u8); // NULL object terminated
             }
             Some(Object::Set(value)) => {
-                let read = value.read().unwrap();
-                let size = read.len();
+                let size = value.len();
 
                 self.w_kind(Kind::Set);
                 self.w_long(size as i32);
 
-                for item in read.iter() {
+                for item in value.iter() {
                     self.w_object(Some(item.clone().into()));
                 }
             }

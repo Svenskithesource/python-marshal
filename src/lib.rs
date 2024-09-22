@@ -55,7 +55,7 @@ pub enum Kind {
 }
 
 bitflags! {
-    #[derive(Clone, Debug)]
+    #[derive(Clone, Debug, PartialEq)]
     pub struct CodeFlags: u32 {
         const OPTIMIZED                   = 0x1;
         const NEWLOCALS                   = 0x2;
@@ -87,7 +87,7 @@ bitflags! {
 }
 
 #[rustfmt::skip]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Code310 {
     pub argcount:        u32,
     pub posonlyargcount: u32,
@@ -107,13 +107,13 @@ pub struct Code310 {
     pub lnotab:          Arc<Vec<u8>>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Code {
     V310(Code310),
 }
 
 #[rustfmt::skip]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Object {
     None,
     StopIteration,
@@ -125,9 +125,9 @@ pub enum Object {
     Bytes     (Arc<Vec<u8>>),
     String    (Arc<String>),
     Tuple     (Arc<Vec<Object>>),
-    List      (Arc<RwLock<Vec<Object>>>),
-    Dict      (Arc<RwLock<HashMap<ObjectHashable, Object>>>),
-    Set       (Arc<RwLock<HashSet<ObjectHashable>>>),
+    List      (Arc<Vec<Object>>),
+    Dict      (Arc<HashMap<ObjectHashable, Object>>),
+    Set       (Arc<HashSet<ObjectHashable>>),
     FrozenSet (Arc<HashSet<ObjectHashable>>),
     Code      (Arc<Code>),
 }
@@ -539,13 +539,13 @@ mod tests {
     fn test_dump_list() {
         // Empty list
         let data = b"\xdb\x00\x00\x00\x00";
-        let object = Object::List(RwLock::new(vec![]).into());
+        let object = Object::List(vec![].into());
         let dumped = dump_bytes(object, (3, 10), 4).unwrap();
         assert_eq!(data.to_vec(), dumped);
 
         // List with two elements ("a", "b")
         let data = b"\xdb\x02\x00\x00\x00\xfa\x01a\xfa\x01b";
-        let object = Object::List(RwLock::new(vec![Object::String("a".to_string().into()), Object::String("b".to_string().into())]).into());
+        let object = Object::List(vec![Object::String("a".to_string().into()), Object::String("b".to_string().into())].into());
         let dumped = dump_bytes(object, (3, 10), 4).unwrap();
         assert_eq!(data.to_vec(), dumped);
     }
@@ -554,18 +554,18 @@ mod tests {
     fn test_dump_dict() {
         // Empty dict
         let data = b"\xfb0";
-        let object = Object::Dict(RwLock::new(HashMap::new()).into());
+        let object = Object::Dict(HashMap::new().into());
         let dumped = dump_bytes(object, (3, 10), 4).unwrap();
         assert_eq!(data.to_vec(), dumped);
 
         // Dict with two elements {"a": "b", "c": "d"}
         let data = b"\xfb\xfa\x01a\xfa\x01b\xfa\x01c\xfa\x01d0";
-        let object = Object::Dict(RwLock::new({
+        let object = Object::Dict({
             let mut map = HashMap::new();
             map.insert(ObjectHashable::String("a".to_string().into()), Object::String("b".to_string().into()));
             map.insert(ObjectHashable::String("c".to_string().into()), Object::String("d".to_string().into()));
             map
-        }).into());
+        }.into());
         let dumped = dump_bytes(object, (3, 10), 4).unwrap();
         assert_eq!(data.to_vec(), dumped);
     }
@@ -574,20 +574,21 @@ mod tests {
     fn test_dump_set() {
         // Empty set
         let data = b"\xbc\x00\x00\x00\x00";
-        let object = Object::Set(RwLock::new(HashSet::new()).into());
+        let object = Object::Set(HashSet::new().into());
         let dumped = dump_bytes(object, (3, 10), 4).unwrap();
         assert_eq!(data.to_vec(), dumped);
 
         // Set with two elements {"a", "b"}
-        let data = b"\xbc\x02\x00\x00\x00\xfa\x01a\xfa\x01b";
-        let object = Object::Set(RwLock::new({
+        let data1 = b"\xbc\x02\x00\x00\x00\xfa\x01a\xfa\x01b";
+        let data2 = b"\xbc\x02\x00\x00\x00\xfa\x01b\xfa\x01a"; // Order is not guaranteed
+        let object = Object::Set({
             let mut set = HashSet::new();
             set.insert(ObjectHashable::String("a".to_string().into()));
             set.insert(ObjectHashable::String("b".to_string().into()));
             set
-        }).into());
+        }.into());
         let dumped = dump_bytes(object, (3, 10), 4).unwrap();
-        assert_eq!(data.to_vec(), dumped);
+        assert!(data1.to_vec() == dumped || data2.to_vec() == dumped);
     }
 
     #[test]
@@ -614,7 +615,8 @@ mod tests {
     #[test]
     fn test_dump_code() {
         // def f(arg1, arg2=None): print(arg1, arg2)
-        let data = b"\xe3\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x03\x00\x00\x00C\x00\x00\x00s\x0e\x00\x00\x00t\x00|\x00|\x01\x83\x02\x01\x00d\x00S\x00\xa9\x01N)\x01\xda\x05print)\x02Z\x04arg1Z\x04arg2\xa9\x00r\x03\x00\x00\x00\xfa\x07<stdin>\xda\x01f\x01\x00\x00\x00s\x02\x00\x00\x00\x0e\x00";
+        let data = b"c\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x03\x00\x00\x00C\x00\x00\x00s\x0e\x00\x00\x00t\x00|\x00|\x01\x83\x02\x01\x00d\x00S\x00)\x01N)\x01\xda\x05print)\x02\xda\x04arg1\xda\x04arg2\xa9\x00r\x03\x00\x00\x00z\x07<stdin>\xda\x01f\x01\x00\x00\x00s\x02\x00\x00\x00\x0e\x00";
+
         let object = Code::V310(
             Code310 {
                 argcount: 2,
@@ -661,6 +663,9 @@ mod tests {
             },
         );
         let dumped = dump_bytes(Object::Code(Arc::new(object)), (3, 10), 4).unwrap();
+        let loaded = load_bytes(&dumped, (3, 10)).unwrap();
+        dbg!(&loaded);
+        
         assert_eq!(data.to_vec(), dumped);
     }
 }

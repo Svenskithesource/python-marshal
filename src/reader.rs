@@ -48,8 +48,6 @@ macro_rules! extract_strings_tuple {
 macro_rules! extract_strings_list {
     ($objs:expr) => {
         $objs
-            .read()
-            .unwrap()
             .iter()
             .map(|o| match o {
                 Object::String(string) => Ok(string.clone()),
@@ -63,8 +61,6 @@ macro_rules! extract_strings_list {
 macro_rules! extract_strings_set {
     ($objs:expr) => {
         $objs
-            .read()
-            .unwrap()
             .iter()
             .map(|o| match o {
                 ObjectHashable::String(string) => Ok(string.clone()),
@@ -91,8 +87,6 @@ macro_rules! extract_strings_frozenset {
 macro_rules! extract_strings_dict {
     ($objs:expr) => {
         $objs
-            .read()
-            .unwrap()
             .iter()
             .map(|(k, v)| match (k, v) {
                 (ObjectHashable::String(key), Object::String(value)) => {
@@ -341,27 +335,25 @@ impl PyReader {
             Kind::List => {
                 let length = self.r_long()?;
                 let value =
-                    Object::List(RwLock::new(self.r_vec(length as usize, Kind::List)?).into());
+                    Object::List(self.r_vec(length as usize, Kind::List)?.into());
 
                 Some(value)
             }
             Kind::Dict => {
-                let value = Object::Dict(RwLock::new(self.r_hashmap()?).into());
+                let value = Object::Dict(self.r_hashmap()?.into());
 
                 Some(value)
             }
             Kind::Set => {
                 let length = self.r_long()?;
-                let value = RwLock::new(
+                let value = 
                     self.r_vec(length as usize, Kind::Set)?
                         .into_iter()
                         .map(|o| match ObjectHashable::try_from(o) {
                             Ok(obj) => Ok(obj),
                             Err(_) => Err(Error::UnexpectedObject),
                         })
-                        .collect::<Result<HashSet<_>, _>>()?,
-                )
-                .into();
+                        .collect::<Result<HashSet<_>, _>>()?.into();
 
                 if flag {
                     idx = Some(self.references.len());
