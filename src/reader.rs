@@ -2,7 +2,7 @@ use core::panic;
 use std::{
     collections::{HashMap, HashSet},
     io::{Cursor, Read},
-    sync::{Arc, RwLock},
+    sync::Arc,
 };
 
 use anyhow::bail;
@@ -14,7 +14,7 @@ use crate::{error::Error, Code, Code310, CodeFlags, Kind, Object, ObjectHashable
 
 pub struct PyReader {
     cursor: Cursor<Vec<u8>>,
-    references: Vec<Object>,
+    pub references: HashMap<usize, Arc<Object>>,
     version: PyVersion,
 }
 
@@ -32,11 +32,31 @@ macro_rules! extract_object {
 }
 
 #[macro_export]
+macro_rules! resolve_object_ref {
+    ($self:expr, $refs:expr) => {
+        match $self.ok_or_else(|| crate::error::Error::UnexpectedNull) {
+            Ok(val) => match val {
+                Object::LoadRef(index) | Object::WriteRef(index) => {
+                    let reference = $refs.get(&index);
+
+                    match reference {
+                        Some(obj) => Ok((**obj).clone()),
+                        None => Err(crate::error::Error::InvalidReference),
+                    }
+                }
+                x => Ok(x),
+            },
+            Err(e) => Err(e),
+        }
+    };
+}
+
+#[macro_export]
 macro_rules! extract_strings_tuple {
-    ($objs:expr) => {
+    ($objs:expr, $refs:expr) => {
         $objs
             .iter()
-            .map(|o| match o {
+            .map(|o| match resolve_object_ref!(Some(o.clone()), $refs)? {
                 Object::String(string) => Ok(string.clone()),
                 _ => Err(Error::UnexpectedObject),
             })
@@ -49,7 +69,7 @@ macro_rules! extract_strings_list {
     ($objs:expr) => {
         $objs
             .iter()
-            .map(|o| match o {
+            .map(|o| match o.as_ref() {
                 Object::String(string) => Ok(string.clone()),
                 _ => Err(Error::UnexpectedObject),
             })
@@ -88,7 +108,7 @@ macro_rules! extract_strings_dict {
     ($objs:expr) => {
         $objs
             .iter()
-            .map(|(k, v)| match (k, v) {
+            .map(|(k, v)| match (k, v.as_ref()) {
                 (ObjectHashable::String(key), Object::String(value)) => {
                     Ok((key.clone(), value.clone()))
                 }
@@ -103,7 +123,7 @@ impl PyReader {
         Self {
             cursor: Cursor::new(data),
             version,
-            references: Vec::new(),
+            references: HashMap::new(),
         }
     }
 
@@ -198,12 +218,8 @@ impl PyReader {
         Ok(map)
     }
 
-    fn add_reference(&mut self, obj: Object) {
-        self.references.push(obj);
-    }
-
-    fn set_reference(&mut self, index: usize, obj: Object) {
-        self.references[index] = obj;
+    fn set_reference(&mut self, index: usize, obj: Arc<Object>) {
+        self.references.insert(index, obj);
     }
 
     fn r_object(&mut self) -> anyhow::Result<Option<Object>> {
@@ -224,7 +240,7 @@ impl PyReader {
                 if flag =>
             {
                 let i = self.references.len();
-                self.add_reference(Object::None);
+                self.set_reference(i, Object::None.into());
                 Some(i)
             }
             _ => None,
@@ -334,30 +350,42 @@ impl PyReader {
             }
             Kind::List => {
                 let length = self.r_long()?;
-                let value =
-                    Object::List(self.r_vec(length as usize, Kind::List)?.into());
+                let value = Object::List(
+                    self.r_vec(length as usize, Kind::List)?
+                        .into_iter()
+                        .map(|o| o.into())
+                        .collect::<Vec<_>>()
+                        .into(),
+                );
 
                 Some(value)
             }
             Kind::Dict => {
-                let value = Object::Dict(self.r_hashmap()?.into());
+                let value = Object::Dict(
+                    self.r_hashmap()?
+                        .into_iter()
+                        .map(|(k, v)| (k, v.into()))
+                        .collect::<HashMap<_, _>>()
+                        .into(),
+                );
 
                 Some(value)
             }
             Kind::Set => {
                 let length = self.r_long()?;
-                let value = 
-                    self.r_vec(length as usize, Kind::Set)?
-                        .into_iter()
-                        .map(|o| match ObjectHashable::try_from(o) {
-                            Ok(obj) => Ok(obj),
-                            Err(_) => Err(Error::UnexpectedObject),
-                        })
-                        .collect::<Result<HashSet<_>, _>>()?.into();
+                let value = self
+                    .r_vec(length as usize, Kind::Set)?
+                    .into_iter()
+                    .map(|o| match ObjectHashable::try_from(o) {
+                        Ok(obj) => Ok(obj),
+                        Err(_) => Err(Error::UnexpectedObject),
+                    })
+                    .collect::<Result<HashSet<_>, _>>()?
+                    .into();
 
                 if flag {
                     idx = Some(self.references.len());
-                    self.add_reference(Object::Set(Arc::clone(&value)));
+                    self.set_reference(idx.unwrap(), Object::Set(Arc::clone(&value)).into());
                 }
 
                 Some(Object::Set(value))
@@ -387,25 +415,29 @@ impl PyReader {
                         let nlocals = self.r_long()?;
                         let stacksize = self.r_long()?;
                         let flags = CodeFlags::from_bits_truncate(self.r_long()? as u32);
-                        let code = extract_object!(self.r_object()?, Object::Bytes(bytes) => bytes, Error::NullInTuple)?;
-                        let consts = extract_object!(self.r_object()?, Object::Tuple(objs) => objs, Error::NullInTuple)?;
+                        let code = extract_object!(Some(resolve_object_ref!(self.r_object()?, self.references)?), Object::Bytes(bytes) => bytes, Error::NullInTuple)?;
+                        let consts = extract_object!(Some(resolve_object_ref!(self.r_object()?, self.references)?), Object::Tuple(objs) => objs, Error::NullInTuple)?;
                         let names = extract_strings_tuple!(
-                            extract_object!(self.r_object()?, Object::Tuple(objs) => objs, Error::NullInTuple)?
+                            extract_object!(Some(resolve_object_ref!(self.r_object()?, self.references)?), Object::Tuple(objs) => objs, Error::NullInTuple)?,
+                            self.references
                         )?;
 
                         let varnames = extract_strings_tuple!(
-                            extract_object!(self.r_object()?, Object::Tuple(objs) => objs, Error::NullInTuple)?
+                            extract_object!(Some(resolve_object_ref!(self.r_object()?, self.references)?), Object::Tuple(objs) => objs, Error::NullInTuple)?,
+                            self.references
                         )?;
                         let freevars = extract_strings_tuple!(
-                            extract_object!(self.r_object()?, Object::Tuple(objs) => objs, Error::NullInTuple)?
+                            extract_object!(Some(resolve_object_ref!(self.r_object()?, self.references)?), Object::Tuple(objs) => objs, Error::NullInTuple)?,
+                            self.references
                         )?;
                         let cellvars = extract_strings_tuple!(
-                            extract_object!(self.r_object()?, Object::Tuple(objs) => objs, Error::NullInTuple)?
+                            extract_object!(Some(resolve_object_ref!(self.r_object()?, self.references)?), Object::Tuple(objs) => objs, Error::NullInTuple)?,
+                            self.references
                         )?;
-                        let filename = extract_object!(self.r_object()?, Object::String(string) => string, Error::UnexpectedObject)?;
-                        let name = extract_object!(self.r_object()?, Object::String(string) => string, Error::UnexpectedObject)?;
+                        let filename = extract_object!(Some(resolve_object_ref!(self.r_object()?, self.references)?), Object::String(string) => string, Error::UnexpectedObject)?;
+                        let name = extract_object!(Some(resolve_object_ref!(self.r_object()?, self.references)?), Object::String(string) => string, Error::UnexpectedObject)?;
                         let firstlineno = self.r_long()?;
-                        let lnotab = extract_object!(self.r_object()?, Object::Bytes(bytes) => bytes, Error::NullInTuple)?;
+                        let lnotab = extract_object!(Some(resolve_object_ref!(self.r_object()?, self.references)?), Object::Bytes(bytes) => bytes, Error::NullInTuple)?;
 
                         Object::Code(Arc::new(Code::V310(Code310 {
                             argcount: argcount.try_into().unwrap(),
@@ -434,13 +466,14 @@ impl PyReader {
                 Some(value)
             }
             Kind::Ref => {
-                let index = self.r_long()?;
-                let value = self
-                    .references
-                    .get(index as usize)
-                    .ok_or_else(|| Error::InvalidReference)?
-                    .clone();
-                Some(value)
+                let index = self.r_long()? as usize;
+
+                let reference = self.references.get(&index);
+
+                match reference {
+                    Some(_) => Some(Object::LoadRef(index)),
+                    None => bail!(Error::InvalidReference),
+                }
             }
             Kind::Unknown => bail!(Error::InvalidKind(obj_kind)),
             Kind::StopIteration | Kind::FlagRef => todo!(),
@@ -451,17 +484,23 @@ impl PyReader {
             | (Some(Object::None), _)
             | (Some(Object::StopIteration), _)
             | (Some(Object::Ellipsis), _)
-            | (Some(Object::Bool(_)), _) => {}
+            | (Some(Object::Bool(_)), _)
+            | (Some(Object::LoadRef(_)), _) => {}
             (Some(x), Some(i)) if flag => {
-                self.set_reference(i, x.clone());
+                idx = Some(i);
+                self.set_reference(i, x.clone().into());
             }
             (Some(x), None) if flag => {
-                self.add_reference(x.clone());
+                idx = Some(self.references.len());
+                self.set_reference(idx.unwrap(), x.clone().into());
             }
             (Some(_), _) => {}
         };
 
-        Ok(obj)
+        match flag {
+            true => Ok(Some(Object::WriteRef(idx.unwrap()))),
+            false => Ok(obj),
+        }
     }
 
     pub fn read_object(&mut self) -> anyhow::Result<Object> {

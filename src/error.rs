@@ -15,6 +15,7 @@ pub enum Error {
     InvalidObject(Object),
     UnexpectedObject,
     InvalidReference,
+    UnexpectedNull,
 }
 
 impl Display for Error {
@@ -34,6 +35,7 @@ impl Display for Error {
             Error::InvalidObject(obj) => write!(f, "invalid object: {:?}", obj),
             Error::UnexpectedObject => write!(f, "unexpected object"),
             Error::InvalidReference => write!(f, "bad marshal data (invalid reference)"),
+            Error::UnexpectedNull => write!(f, "unexpected NULL object"),
         }
     }
 }
