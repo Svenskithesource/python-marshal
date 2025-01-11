@@ -281,7 +281,7 @@ impl PyWriter {
                     }
                 }
             }
-            Some(Object::WriteRef(index)) => {
+            Some(Object::StoreRef(index)) => {
                 let reference = self.references.get(&index);
 
                 match reference {

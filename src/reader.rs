@@ -32,11 +32,11 @@ macro_rules! extract_object {
 }
 
 #[macro_export]
-macro_rules! resolve_object_ref {
+macro_rules! resolve_object_ref { // Gets the object from the reference table by index
     ($self:expr, $refs:expr) => {
         match $self.ok_or_else(|| crate::error::Error::UnexpectedNull) {
             Ok(val) => match val {
-                Object::LoadRef(index) | Object::WriteRef(index) => {
+                Object::LoadRef(index) | Object::StoreRef(index) => {
                     let reference = $refs.get(&index);
 
                     match reference {
@@ -408,7 +408,10 @@ impl PyReader {
             }
             Kind::Code => {
                 let value = match self.version {
-                    (3, 10) => {
+                    PyVersion {
+                        major: 3,
+                        minor: 10,
+                    } => {
                         let argcount = self.r_long()?;
                         let posonlyargcount = self.r_long()?;
                         let kwonlyargcount = self.r_long()?;
@@ -498,7 +501,7 @@ impl PyReader {
         };
 
         match flag {
-            true => Ok(Some(Object::WriteRef(idx.unwrap()))),
+            true => Ok(Some(Object::StoreRef(idx.unwrap()))),
             false => Ok(obj),
         }
     }
