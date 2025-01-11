@@ -4,8 +4,8 @@
 NOTE: This library only supports Python 3.0 and later.
 
 ## Installation
-
-Add the following to your `Cargo.toml`:
+Use `cargo add python_marshal` to add this library to your project.
+You can also manually add it to your `Cargo.toml` file:
 
 ```toml
 [dependencies]
@@ -25,7 +25,7 @@ use python_marshal::load_bytes;
 
 let data = b"r\x00\x00\x00\x00"; // Example byte data with a reference
 let python_version = (3, 10);
-let (object, references) = load_bytes(data, python_version).unwrap();
+let (object, references) = load_bytes(data, python_version.into()).unwrap();
 ```
 `references` is a hashmap that maps the index of the reference to the object it references.
 

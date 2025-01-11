@@ -1,5 +1,8 @@
 [package]
 name = "python_marshal"
+license = "GPL-3.0-or-later"
+description = "A Rust library for reading and writing Python marshal files."
+readme = "README.md"
 version = "0.1.0"
 edition = "2021"
 
