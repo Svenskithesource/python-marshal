@@ -1,5 +1,3 @@
-use std::any;
-
 #[derive(Eq, PartialEq, PartialOrd, Debug, Ord)]
 pub struct PyVersion {
     pub major: u8,

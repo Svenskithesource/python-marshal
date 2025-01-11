@@ -4,7 +4,6 @@ mod reader;
 mod writer;
 
 use bitflags::bitflags;
-use core::time;
 use error::Error;
 use hashable::HashableHashSet;
 use magic::PyVersion;
@@ -573,7 +572,7 @@ mod tests {
 
         let obj = load_pyc(temp_file.path()).unwrap();
 
-        dbg!(&obj);
+        dbg!(&obj); // TODO: Add assertions
     }
 
     #[test]
