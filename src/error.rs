@@ -1,10 +1,12 @@
 use std::fmt::{Display, Formatter, Result};
 
-use crate::{Kind, Object};
+use crate::{magic::PyVersion, Kind, Object};
 
 #[derive(Debug)]
 #[allow(dead_code)]
 pub enum Error {
+    UnsupportedPyVersion(PyVersion),
+    UnsupportedMagicNumber(u32),
     DigitOutOfRange(u16),
     UnnormalizedLong,
     NullInTuple,
@@ -13,6 +15,8 @@ pub enum Error {
     NullInDict,
     InvalidKind(Kind),
     InvalidObject(Object),
+    InvalidData(std::io::Error),
+    InvalidString(std::string::FromUtf8Error),
     UnexpectedObject,
     InvalidReference,
     UnexpectedNull,
@@ -21,6 +25,14 @@ pub enum Error {
 impl Display for Error {
     fn fmt(&self, f: &mut Formatter) -> Result {
         match self {
+            Error::UnsupportedPyVersion(vers) => write!(
+                f,
+                "unsupported Python version: {}.{}",
+                vers.major, vers.minor
+            ),
+            Error::UnsupportedMagicNumber(magic) => {
+                write!(f, "unsupported magic number: 0x{:08X}", magic)
+            }
             Error::DigitOutOfRange(digit) => write!(
                 f,
                 "bad marshal data (digit out of range in long): {}",
@@ -33,6 +45,8 @@ impl Display for Error {
             Error::NullInDict => write!(f, "NULL object in marshal data for dict"),
             Error::InvalidKind(kind) => write!(f, "invalid kind: {:?}", kind),
             Error::InvalidObject(obj) => write!(f, "invalid object: {:?}", obj),
+            Error::InvalidData(err) => write!(f, "bad marshal data: {:?}", err),
+            Error::InvalidString(err) => write!(f, "bad marshal data (invalid string): {:?}", err),
             Error::UnexpectedObject => write!(f, "unexpected object"),
             Error::InvalidReference => write!(f, "bad marshal data (invalid reference)"),
             Error::UnexpectedNull => write!(f, "unexpected NULL object"),
@@ -41,3 +55,15 @@ impl Display for Error {
 }
 
 impl std::error::Error for Error {}
+
+impl From<std::io::Error> for Error {
+    fn from(err: std::io::Error) -> Self {
+        Error::InvalidData(err)
+    }
+}
+
+impl From<std::string::FromUtf8Error> for Error {
+    fn from(err: std::string::FromUtf8Error) -> Self {
+        Error::InvalidString(err)
+    }
+}

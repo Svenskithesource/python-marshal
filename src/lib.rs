@@ -222,9 +222,9 @@ pub struct PycFile {
 pub fn load_bytes(
     data: &[u8],
     python_version: PyVersion,
-) -> anyhow::Result<(Object, HashMap<usize, Arc<Object>>)> {
+) -> Result<(Object, HashMap<usize, Arc<Object>>), Error> {
     if python_version < (3, 0) {
-        return Err(anyhow::anyhow!("Python 2.x is not supported"));
+        return Err(Error::UnsupportedPyVersion(python_version));
     }
 
     let mut py_reader = PyReader::new(data.to_vec(), python_version);
@@ -234,7 +234,7 @@ pub fn load_bytes(
     Ok((object, py_reader.references))
 }
 
-pub fn load_pyc(filepath: impl AsRef<Path>) -> anyhow::Result<PycFile> {
+pub fn load_pyc(filepath: impl AsRef<Path>) -> Result<PycFile, Error> {
     let data = std::fs::read(filepath.as_ref())?;
 
     let magic_number = u32::from_le_bytes(data[0..4].try_into().unwrap());
@@ -270,9 +270,9 @@ pub fn dump_bytes(
     references: Option<HashMap<usize, Arc<Object>>>,
     python_version: PyVersion,
     marshal_version: u8,
-) -> anyhow::Result<Vec<u8>> {
+) -> Result<Vec<u8>, Error> {
     if python_version < (3, 0) {
-        return Err(anyhow::anyhow!("Python 2.x is not supported"));
+        return Err(Error::UnsupportedPyVersion(python_version));
     }
 
     let mut py_writer = PyWriter::new(references.unwrap_or(HashMap::new()), marshal_version);

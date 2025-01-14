@@ -7,7 +7,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-anyhow = "1.0.88"
 bitflags = "2.6.0"
 hashable = "0.0.0"
 num-bigint = "0.4.6"

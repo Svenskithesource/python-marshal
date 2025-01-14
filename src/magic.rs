@@ -20,7 +20,7 @@ impl From<(u8, u8)> for PyVersion {
 }
 
 impl TryFrom<u32> for PyVersion {
-    type Error = anyhow::Error;
+    type Error = crate::Error;
 
     fn try_from(vers: u32) -> Result<Self, Self::Error> {
         match vers {
@@ -38,10 +38,7 @@ impl TryFrom<u32> for PyVersion {
             0x0A0D0DA7 => Ok(PyVersion::new(3, 11)),
             0x0A0D0DCB => Ok(PyVersion::new(3, 12)),
             0x0A0D0DF3 => Ok(PyVersion::new(3, 13)),
-            _ => Err(anyhow::anyhow!(format!(
-                "unsupported magic number: 0x{:08X}",
-                vers
-            ))),
+            _ => Err(Self::Error::UnsupportedMagicNumber(vers)),
         }
     }
 }

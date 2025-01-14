@@ -5,7 +5,6 @@ use std::{
     sync::Arc,
 };
 
-use anyhow::bail;
 use num_bigint::{BigInt, BigUint};
 use num_complex::Complex;
 use num_traits::FromPrimitive;
@@ -32,7 +31,8 @@ macro_rules! extract_object {
 }
 
 #[macro_export]
-macro_rules! resolve_object_ref { // Gets the object from the reference table by index
+macro_rules! resolve_object_ref {
+    // Gets the object from the reference table by index
     ($self:expr, $refs:expr) => {
         match $self.ok_or_else(|| crate::error::Error::UnexpectedNull) {
             Ok(val) => match val {
@@ -127,66 +127,67 @@ impl PyReader {
         }
     }
 
-    fn r_u8(&mut self) -> anyhow::Result<u8> {
+    fn r_u8(&mut self) -> Result<u8, std::io::Error> {
         let mut buf = [0; 1];
         self.cursor.read_exact(&mut buf)?;
         Ok(buf[0])
     }
 
-    fn r_u16(&mut self) -> anyhow::Result<u16> {
+    fn r_u16(&mut self) -> Result<u16, std::io::Error> {
         let mut buf = [0; 2];
         self.cursor.read_exact(&mut buf)?;
         let value = u16::from_le_bytes(buf);
         Ok(value)
     }
 
-    fn r_long(&mut self) -> anyhow::Result<i32> {
+    fn r_long(&mut self) -> Result<i32, std::io::Error> {
         let mut buf = [0; 4];
         self.cursor.read_exact(&mut buf)?;
         let value = i32::from_le_bytes(buf);
         Ok(value)
     }
 
-    fn r_long64(&mut self) -> anyhow::Result<i64> {
+    fn r_long64(&mut self) -> Result<i64, std::io::Error> {
         let mut buf = [0; 8];
         self.cursor.read_exact(&mut buf)?;
         let value = i64::from_le_bytes(buf);
         Ok(value)
     }
 
-    fn r_bytes(&mut self, length: usize) -> anyhow::Result<Vec<u8>> {
+    fn r_bytes(&mut self, length: usize) -> Result<Vec<u8>, std::io::Error> {
         let mut buf = vec![0; length];
         self.cursor.read_exact(&mut buf)?;
         Ok(buf)
     }
 
-    fn r_string(&mut self, length: usize) -> anyhow::Result<String> {
+    fn r_string(&mut self, length: usize) -> Result<String, Error> {
         let bytes = self.r_bytes(length)?;
         let string = String::from_utf8(bytes)?;
         Ok(string)
     }
 
-    fn r_float_str(&mut self) -> anyhow::Result<f64> {
+    fn r_float_str(&mut self) -> Result<f64, Error> {
         let n = self.r_u8()?;
         let s = self.r_string(n as usize)?;
-        Ok(s.parse()?)
+        Ok(s.parse()
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?)
     }
 
-    fn r_float_bin(&mut self) -> anyhow::Result<f64> {
+    fn r_float_bin(&mut self) -> Result<f64, std::io::Error> {
         let mut buf = [0; 8];
         self.cursor.read_exact(&mut buf)?;
         let value = f64::from_le_bytes(buf);
         Ok(value)
     }
 
-    fn r_vec(&mut self, length: usize, kind: Kind) -> anyhow::Result<Vec<Object>> {
+    fn r_vec(&mut self, length: usize, kind: Kind) -> Result<Vec<Object>, Error> {
         let mut vec = Vec::with_capacity(length);
 
         for _ in 0..length {
             let obj = self.r_object()?;
 
             if obj.is_none() {
-                bail!(match kind {
+                return Err(match kind {
                     Kind::Tuple => Error::NullInTuple,
                     Kind::List => Error::NullInList,
                     Kind::Set => Error::NullInSet,
@@ -200,7 +201,7 @@ impl PyReader {
         Ok(vec)
     }
 
-    fn r_hashmap(&mut self) -> anyhow::Result<HashMap<ObjectHashable, Object>> {
+    fn r_hashmap(&mut self) -> Result<HashMap<ObjectHashable, Object>, Error> {
         let mut map = HashMap::new();
 
         loop {
@@ -222,7 +223,7 @@ impl PyReader {
         self.references.insert(index, obj);
     }
 
-    fn r_object(&mut self) -> anyhow::Result<Option<Object>> {
+    fn r_object(&mut self) -> Result<Option<Object>, Error> {
         let code = self.r_u8()?;
 
         let flag = (code & Kind::FlagRef as u8) != 0;
@@ -272,7 +273,7 @@ impl PyReader {
                         let digit = self.r_u16()?;
 
                         if digit > (1 << 15) {
-                            bail!(Error::DigitOutOfRange(digit));
+                            return Err(Error::DigitOutOfRange(digit));
                         }
 
                         value |= BigUint::from(digit) << (i * 15);
@@ -475,10 +476,10 @@ impl PyReader {
 
                 match reference {
                     Some(_) => Some(Object::LoadRef(index)),
-                    None => bail!(Error::InvalidReference),
+                    None => return Err(Error::InvalidReference),
                 }
             }
-            Kind::Unknown => bail!(Error::InvalidKind(obj_kind)),
+            Kind::Unknown => return Err(Error::InvalidKind(obj_kind)),
             Kind::StopIteration | Kind::FlagRef => todo!(),
         };
 
@@ -506,7 +507,7 @@ impl PyReader {
         }
     }
 
-    pub fn read_object(&mut self) -> anyhow::Result<Object> {
+    pub fn read_object(&mut self) -> Result<Object, Error> {
         if self.cursor.position() == self.cursor.get_ref().len() as u64 {
             panic!("EOF, don't know what to do");
         }
