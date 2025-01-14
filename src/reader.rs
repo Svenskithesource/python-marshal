@@ -9,7 +9,9 @@ use num_bigint::{BigInt, BigUint};
 use num_complex::Complex;
 use num_traits::FromPrimitive;
 
-use crate::{error::Error, Code, Code310, CodeFlags, Kind, Object, ObjectHashable, PyVersion};
+use crate::{
+    error::Error, Code, Code310, CodeFlags, Kind, Object, ObjectHashable, PyString, PyVersion,
+};
 
 pub struct PyReader {
     cursor: Cursor<Vec<u8>>,
@@ -327,13 +329,19 @@ impl PyReader {
             }
             Kind::ASCIIInterned | Kind::ASCII | Kind::Interned | Kind::Unicode => {
                 let length = self.r_long()?;
-                let value = Object::String(Arc::new(self.r_string(length as usize)?));
+                let value = Object::String(Arc::new(PyString::new(
+                    self.r_string(length as usize)?,
+                    obj_kind,
+                )));
 
                 Some(value)
             }
             Kind::ShortAsciiInterned | Kind::ShortAscii => {
                 let length = self.r_u8()?;
-                let value = Object::String(Arc::new(self.r_string(length as usize)?));
+                let value = Object::String(Arc::new(PyString::new(
+                    self.r_string(length as usize)?,
+                    obj_kind,
+                )));
 
                 Some(value)
             }

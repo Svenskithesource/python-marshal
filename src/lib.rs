@@ -19,7 +19,7 @@ use std::{
 };
 use writer::PyWriter;
 
-#[derive(Debug, Clone, Copy, FromPrimitive, ToPrimitive)]
+#[derive(Debug, Clone, Copy, FromPrimitive, ToPrimitive, PartialEq, Eq, Hash)]
 #[repr(u8)]
 #[rustfmt::skip]
 pub enum Kind {
@@ -98,12 +98,12 @@ pub struct Code310 {
     pub flags:           CodeFlags,
     pub code:            Arc<Vec<u8>>,
     pub consts:          Arc<Vec<Object>>,
-    pub names:           Vec<Arc<String>>,
-    pub varnames:        Vec<Arc<String>>,
-    pub freevars:        Vec<Arc<String>>,
-    pub cellvars:        Vec<Arc<String>>,
-    pub filename:        Arc<String>,
-    pub name:            Arc<String>,
+    pub names:           Vec<Arc<PyString>>,
+    pub varnames:        Vec<Arc<PyString>>,
+    pub freevars:        Vec<Arc<PyString>>,
+    pub cellvars:        Vec<Arc<PyString>>,
+    pub filename:        Arc<PyString>,
+    pub name:            Arc<PyString>,
     pub firstlineno:     u32,
     pub lnotab:          Arc<Vec<u8>>,
 }
@@ -111,6 +111,27 @@ pub struct Code310 {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Code {
     V310(Code310),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct PyString {
+    pub value: String,
+    pub kind: Kind,
+}
+
+impl From<String> for PyString {
+    fn from(value: String) -> Self {
+        Self {
+            value,
+            kind: Kind::Unicode, // Default kind
+        }
+    }
+}
+
+impl PyString {
+    pub fn new(value: String, kind: Kind) -> Self {
+        Self { value, kind }
+    }
 }
 
 #[rustfmt::skip]
@@ -124,7 +145,7 @@ pub enum Object {
     Float     (f64),
     Complex   (Complex<f64>),
     Bytes     (Arc<Vec<u8>>),
-    String    (Arc<String>),
+    String    (Arc<PyString>),
     Tuple     (Arc<Vec<Object>>),
     List      (Arc<Vec<Arc<Object>>>),
     Dict      (Arc<HashMap<ObjectHashable, Arc<Object>>>),
@@ -146,7 +167,7 @@ pub enum ObjectHashable {
     Float     (OrderedFloat<f64>),
     Complex   (Complex<OrderedFloat<f64>>),
     Bytes     (Arc<Vec<u8>>),
-    String    (Arc<String>),
+    String    (Arc<PyString>),
     Tuple     (Arc<Vec<ObjectHashable>>),
     FrozenSet (Arc<HashableHashSet<ObjectHashable>>),
 }
@@ -345,7 +366,7 @@ mod tests {
         assert_eq!(
             extract_object!(Some(kind), Object::String(string) => string, Error::UnexpectedObject)
                 .unwrap(),
-            "test".to_string().into()
+            PyString::new("test".to_string(), Kind::ShortAsciiInterned).into()
         );
     }
 
@@ -374,7 +395,10 @@ mod tests {
                 refs
             )
             .unwrap(),
-            vec!["a".to_string().into(), "b".to_string().into()]
+            vec![
+                PyString::new("a".to_string(), Kind::ShortAsciiInterned).into(),
+                PyString::new("b".to_string(), Kind::ShortAsciiInterned).into()
+            ]
         );
     }
 
@@ -401,7 +425,10 @@ mod tests {
                     .unwrap()
             )
             .unwrap(),
-            vec!["a".to_string().into(), "b".to_string().into()]
+            vec![
+                PyString::new("a".to_string(), Kind::ShortAsciiInterned).into(),
+                PyString::new("b".to_string(), Kind::ShortAsciiInterned).into()
+            ]
         );
     }
 
@@ -461,8 +488,14 @@ mod tests {
             .unwrap(),
             {
                 let mut map = HashMap::new();
-                map.insert("a".to_string().into(), "b".to_string().into());
-                map.insert("c".to_string().into(), "d".to_string().into());
+                map.insert(
+                    PyString::new("a".to_string(), Kind::ShortAsciiInterned).into(),
+                    PyString::new("b".to_string(), Kind::ShortAsciiInterned).into(),
+                );
+                map.insert(
+                    PyString::new("c".to_string(), Kind::ShortAsciiInterned).into(),
+                    PyString::new("d".to_string(), Kind::ShortAsciiInterned).into(),
+                );
                 map
             }
         );
@@ -493,8 +526,8 @@ mod tests {
             .unwrap(),
             {
                 let mut set = HashSet::new();
-                set.insert("a".to_string().into());
-                set.insert("b".to_string().into());
+                set.insert(PyString::new("a".to_string(), Kind::ShortAsciiInterned).into());
+                set.insert(PyString::new("b".to_string(), Kind::ShortAsciiInterned).into());
                 set
             }
         );
@@ -525,8 +558,8 @@ mod tests {
             .unwrap(),
             {
                 let mut set = HashSet::new();
-                set.insert("a".to_string().into());
-                set.insert("b".to_string().into());
+                set.insert(PyString::new("a".to_string(), Kind::ShortAsciiInterned).into());
+                set.insert(PyString::new("b".to_string(), Kind::ShortAsciiInterned).into());
                 set
             }
         );
@@ -555,8 +588,14 @@ mod tests {
                 assert_eq!(code.varnames.len(), 2);
                 assert_eq!(code.freevars.len(), 0);
                 assert_eq!(code.cellvars.len(), 0);
-                assert_eq!(code.filename, "<stdin>".to_string().into());
-                assert_eq!(code.name, "f".to_string().into());
+                assert_eq!(
+                    code.filename,
+                    PyString::new("<stdin>".to_string(), Kind::ShortAscii).into()
+                );
+                assert_eq!(
+                    code.name,
+                    PyString::new("f".to_string(), Kind::ShortAsciiInterned).into()
+                );
                 assert_eq!(code.firstlineno, 1);
                 assert_eq!(code.lnotab.len(), 2);
             }
@@ -615,7 +654,7 @@ mod tests {
     fn test_dump_string() {
         // "test"
         let data = b"z\x04test";
-        let object = Object::String("test".to_string().into());
+        let object = Object::String(PyString::from("test".to_string()).into());
         let dumped = dump_bytes(object, None, (3, 10).into(), 4).unwrap();
         assert_eq!(data.to_vec(), dumped);
     }
@@ -632,8 +671,8 @@ mod tests {
         let data = b")\x02z\x01az\x01b";
         let object = Object::Tuple(
             vec![
-                Object::String("a".to_string().into()),
-                Object::String("b".to_string().into()),
+                Object::String(PyString::from("a".to_string()).into()),
+                Object::String(PyString::from("b".to_string()).into()),
             ]
             .into(),
         );
@@ -653,8 +692,8 @@ mod tests {
         let data = b"[\x02\x00\x00\x00z\x01az\x01b";
         let object = Object::List(
             vec![
-                Object::String("a".to_string().into()).into(),
-                Object::String("b".to_string().into()).into(),
+                Object::String(PyString::from("a".to_string()).into()).into(),
+                Object::String(PyString::from("b".to_string()).into()).into(),
             ]
             .into(),
         );
@@ -677,12 +716,12 @@ mod tests {
             {
                 let mut map = HashMap::new();
                 map.insert(
-                    ObjectHashable::String("a".to_string().into()),
-                    Object::String("b".to_string().into()).into(),
+                    ObjectHashable::String(PyString::from("a".to_string()).into()),
+                    Object::String(PyString::from("b".to_string()).into()).into(),
                 );
                 map.insert(
-                    ObjectHashable::String("c".to_string().into()),
-                    Object::String("d".to_string().into()).into(),
+                    ObjectHashable::String(PyString::from("c".to_string()).into()),
+                    Object::String(PyString::from("d".to_string()).into()).into(),
                 );
                 map
             }
@@ -706,8 +745,12 @@ mod tests {
         let object = Object::Set(
             {
                 let mut set = HashSet::new();
-                set.insert(ObjectHashable::String("a".to_string().into()));
-                set.insert(ObjectHashable::String("b".to_string().into()));
+                set.insert(ObjectHashable::String(
+                    PyString::from("a".to_string()).into(),
+                ));
+                set.insert(ObjectHashable::String(
+                    PyString::from("b".to_string()).into(),
+                ));
                 set
             }
             .into(),
@@ -730,8 +773,12 @@ mod tests {
         let object = Object::FrozenSet(
             {
                 let mut set = HashSet::new();
-                set.insert(ObjectHashable::String("a".to_string().into()));
-                set.insert(ObjectHashable::String("b".to_string().into()));
+                set.insert(ObjectHashable::String(
+                    PyString::from("a".to_string()).into(),
+                ));
+                set.insert(ObjectHashable::String(
+                    PyString::from("b".to_string()).into(),
+                ));
                 set
             }
             .into(),
@@ -754,14 +801,17 @@ mod tests {
             flags: CodeFlags::from_bits_truncate(0x43),
             code: vec![116, 0, 124, 0, 124, 1, 131, 2, 1, 0, 100, 0, 83, 0].into(),
             consts: [Object::None].to_vec().into(),
-            names: ["print".to_string().into()].to_vec().into(),
-            varnames: ["arg1".to_string().into(), "arg2".to_string().into()]
-                .to_vec()
-                .into(),
+            names: [PyString::from("print".to_string()).into()].to_vec().into(),
+            varnames: [
+                PyString::from("arg1".to_string()).into(),
+                PyString::from("arg2".to_string()).into(),
+            ]
+            .to_vec()
+            .into(),
             freevars: [].to_vec(),
             cellvars: [].to_vec(),
-            filename: "<stdin>".to_string().into(),
-            name: "f".to_string().into(),
+            filename: PyString::from("<stdin>".to_string()).into(),
+            name: PyString::from("f".to_string()).into(),
             firstlineno: 1,
             lnotab: [14, 0].to_vec().into(),
         });

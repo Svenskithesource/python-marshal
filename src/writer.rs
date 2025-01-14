@@ -133,7 +133,7 @@ impl PyWriter {
                 self.w_bytes(&*value);
             }
             Some(Object::String(value)) => {
-                let value = &*value;
+                let value = &*&value.value;
                 if self.marshal_version >= 4 && value.is_ascii() {
                     if value.len() <= 255 {
                         self.w_kind(Kind::ShortAscii, is_ref);
