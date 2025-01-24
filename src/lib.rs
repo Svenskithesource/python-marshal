@@ -15,7 +15,6 @@ use reader::PyReader;
 use std::{
     collections::{HashMap, HashSet},
     io::{Read, Write},
-    path::Path,
     sync::Arc,
 };
 use writer::PyWriter;
@@ -97,16 +96,81 @@ pub struct Code310 {
     pub nlocals:         u32,
     pub stacksize:       u32,
     pub flags:           CodeFlags,
-    pub code:            Arc<Vec<u8>>,
-    pub consts:          Arc<Vec<Object>>,
-    pub names:           Vec<Arc<PyString>>,
-    pub varnames:        Vec<Arc<PyString>>,
-    pub freevars:        Vec<Arc<PyString>>,
-    pub cellvars:        Vec<Arc<PyString>>,
-    pub filename:        Arc<PyString>,
-    pub name:            Arc<PyString>,
+    pub code:            Arc<Object>, // Needs to contain Vec<u8> as a value or a reference
+    pub consts:          Arc<Object>, // Needs to contain Vec<Object> as a value or a reference
+    pub names:           Arc<Object>, // Needs to contain Vec<Arc<PyString>> as a value or a reference
+    pub varnames:        Arc<Object>, // Needs to contain Vec<Arc<PyString>> as a value or a reference
+    pub freevars:        Arc<Object>, // Needs to contain Vec<Arc<PyString>> as a value or a reference
+    pub cellvars:        Arc<Object>, // Needs to contain Vec<Arc<PyString>> as a value or a reference
+    pub filename:        Arc<Object>, // Needs to contain Arc<PyString> as a value or a reference
+    pub name:            Arc<Object>, // Needs to contain Arc<PyString> as a value or a reference
     pub firstlineno:     u32,
-    pub lnotab:          Arc<Vec<u8>>,
+    pub lnotab:          Arc<Object>, // Needs to contain Arc<Vec<u8>>, as a value or a reference
+}
+
+impl Code310 {
+    pub fn new(
+        argcount: u32,
+        posonlyargcount: u32,
+        kwonlyargcount: u32,
+        nlocals: u32,
+        stacksize: u32,
+        flags: CodeFlags,
+        code: Arc<Object>,
+        consts: Arc<Object>,
+        names: Arc<Object>,
+        varnames: Arc<Object>,
+        freevars: Arc<Object>,
+        cellvars: Arc<Object>,
+        filename: Arc<Object>,
+        name: Arc<Object>,
+        firstlineno: u32,
+        lnotab: Arc<Object>,
+        references: &HashMap<usize, Arc<Object>>,
+    ) -> Result<Self, Error> {
+        // Ensure all corresponding values are of the correct type
+        extract_object!(Some(resolve_object_ref!(Some((*code).clone()), references)?), Object::Bytes(bytes) => bytes, Error::NullInTuple)?;
+        extract_object!(Some(resolve_object_ref!(Some((*consts).clone()), references)?), Object::Tuple(objs) => objs, Error::NullInTuple)?;
+        extract_strings_tuple!(
+            extract_object!(Some(resolve_object_ref!(Some((*names).clone()), references)?), Object::Tuple(objs) => objs, Error::NullInTuple)?,
+            references
+        )?;
+        extract_strings_tuple!(
+            extract_object!(Some(resolve_object_ref!(Some((*varnames).clone()), references)?), Object::Tuple(objs) => objs, Error::NullInTuple)?,
+            references
+        )?;
+        extract_strings_tuple!(
+            extract_object!(Some(resolve_object_ref!(Some((*freevars).clone()), references)?), Object::Tuple(objs) => objs, Error::NullInTuple)?,
+            references
+        )?;
+        extract_strings_tuple!(
+            extract_object!(Some(resolve_object_ref!(Some((*cellvars).clone()), references)?), Object::Tuple(objs) => objs, Error::NullInTuple)?,
+            references
+        )?;
+
+        extract_object!(Some(resolve_object_ref!(Some((*filename).clone()), references)?), Object::String(string) => string, Error::UnexpectedObject)?;
+        extract_object!(Some(resolve_object_ref!(Some((*name).clone()), references)?), Object::String(string) => string, Error::UnexpectedObject)?;
+        extract_object!(Some(resolve_object_ref!(Some((*lnotab).clone()), references)?), Object::Bytes(bytes) => bytes, Error::NullInTuple)?;
+
+        Ok(Self {
+            argcount,
+            posonlyargcount,
+            kwonlyargcount,
+            nlocals,
+            stacksize,
+            flags,
+            code,
+            consts,
+            names,
+            varnames,
+            freevars,
+            cellvars,
+            filename,
+            name,
+            firstlineno,
+            lnotab,
+        })
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -190,9 +254,9 @@ impl ObjectHashable {
         // If the object is a reference, resolve it and make sure it's hashable
         match obj {
             Object::LoadRef(index) | Object::StoreRef(index) => {
-                if let Some(obj) = references.get(&index) {
-                    let obj = obj.as_ref().clone();
-                    Self::try_from(obj.clone())?;
+                if let Some(resolved_obj) = references.get(&index) {
+                    let resolved_obj = resolved_obj.as_ref().clone();
+                    Self::try_from(resolved_obj.clone())?;
                     match obj {
                         Object::LoadRef(index) => Ok(Self::LoadRef(index)),
                         Object::StoreRef(index) => Ok(Self::StoreRef(index)),
@@ -629,28 +693,38 @@ mod tests {
 
         match code {
             Code::V310(code) => {
+                let inner_code = extract_object!(Some(resolve_object_ref!(Some((*code.code).clone()), &refs).unwrap()), Object::Bytes(bytes) => bytes, Error::NullInTuple).unwrap();
+                let inner_consts = extract_object!(Some(resolve_object_ref!(Some((*code.consts).clone()), &refs).unwrap()), Object::Tuple(objs) => objs, Error::NullInTuple).unwrap();
+                let inner_names = extract_strings_tuple!(extract_object!(Some(resolve_object_ref!(Some((*code.names).clone()), &refs).unwrap()), Object::Tuple(objs) => objs, Error::NullInTuple).unwrap(), &refs).unwrap();
+                let inner_varnames = extract_strings_tuple!(extract_object!(Some(resolve_object_ref!(Some((*code.varnames).clone()), &refs).unwrap()), Object::Tuple(objs) => objs, Error::NullInTuple).unwrap(), &refs).unwrap();
+                let inner_freevars = extract_strings_tuple!(extract_object!(Some(resolve_object_ref!(Some((*code.freevars).clone()), &refs).unwrap()), Object::Tuple(objs) => objs, Error::NullInTuple).unwrap(), &refs).unwrap();
+                let inner_cellvars = extract_strings_tuple!(extract_object!(Some(resolve_object_ref!(Some((*code.cellvars).clone()), &refs).unwrap()), Object::Tuple(objs) => objs, Error::NullInTuple).unwrap(), &refs).unwrap();
+                let inner_filename = extract_object!(Some(resolve_object_ref!(Some((*code.filename).clone()), &refs).unwrap()), Object::String(string) => string, Error::UnexpectedObject).unwrap();
+                let inner_name = extract_object!(Some(resolve_object_ref!(Some((*code.name).clone()), &refs).unwrap()), Object::String(string) => string, Error::UnexpectedObject).unwrap();
+                let inner_lnotab = extract_object!(Some(resolve_object_ref!(Some((*code.lnotab).clone()), &refs).unwrap()), Object::Bytes(bytes) => bytes, Error::NullInTuple).unwrap();
+
                 assert_eq!(code.argcount, 2);
                 assert_eq!(code.posonlyargcount, 0);
                 assert_eq!(code.kwonlyargcount, 0);
                 assert_eq!(code.nlocals, 2);
                 assert_eq!(code.stacksize, 3);
                 // assert_eq!(code.flags, );
-                assert_eq!(code.code.len(), 14);
-                assert_eq!(code.consts.len(), 1);
-                assert_eq!(code.names.len(), 1);
-                assert_eq!(code.varnames.len(), 2);
-                assert_eq!(code.freevars.len(), 0);
-                assert_eq!(code.cellvars.len(), 0);
+                assert_eq!(inner_code.len(), 14);
+                assert_eq!(inner_consts.len(), 1);
+                assert_eq!(inner_names.len(), 1);
+                assert_eq!(inner_varnames.len(), 2);
+                assert_eq!(inner_freevars.len(), 0);
+                assert_eq!(inner_cellvars.len(), 0);
                 assert_eq!(
-                    code.filename,
+                    inner_filename,
                     PyString::new("<stdin>".to_string(), Kind::ShortAscii).into()
                 );
                 assert_eq!(
-                    code.name,
+                    inner_name,
                     PyString::new("f".to_string(), Kind::ShortAsciiInterned).into()
                 );
                 assert_eq!(code.firstlineno, 1);
-                assert_eq!(code.lnotab.len(), 2);
+                assert_eq!(inner_lnotab.len(), 2);
             }
         }
     }
@@ -852,21 +926,30 @@ mod tests {
             nlocals: 2,
             stacksize: 3,
             flags: CodeFlags::from_bits_truncate(0x43),
-            code: vec![116, 0, 124, 0, 124, 1, 131, 2, 1, 0, 100, 0, 83, 0].into(),
-            consts: [Object::None].to_vec().into(),
-            names: [PyString::from("print".to_string()).into()].to_vec().into(),
-            varnames: [
-                PyString::from("arg1".to_string()).into(),
-                PyString::from("arg2".to_string()).into(),
-            ]
-            .to_vec()
+            code: Object::Bytes(vec![116, 0, 124, 0, 124, 1, 131, 2, 1, 0, 100, 0, 83, 0].into())
+                .into(),
+            consts: Object::Tuple([Object::None].to_vec().into()).into(),
+            names: Object::Tuple(
+                [Object::String(PyString::from("print".to_string()).into())]
+                    .to_vec()
+                    .into(),
+            )
             .into(),
-            freevars: [].to_vec(),
-            cellvars: [].to_vec(),
-            filename: PyString::from("<stdin>".to_string()).into(),
-            name: PyString::from("f".to_string()).into(),
+            varnames: Object::Tuple(
+                [
+                    Object::String(PyString::from("arg1".to_string()).into()).into(),
+                    Object::String(PyString::from("arg2".to_string()).into()).into(),
+                ]
+                .to_vec()
+                .into(),
+            )
+            .into(),
+            freevars: Object::Tuple([].to_vec().into()).into(),
+            cellvars: Object::Tuple([].to_vec().into()).into(),
+            filename: Object::String(PyString::from("<stdin>".to_string()).into()).into(),
+            name: Object::String(PyString::from("f".to_string()).into()).into(),
             firstlineno: 1,
-            lnotab: [14, 0].to_vec().into(),
+            lnotab: Object::Bytes([14, 0].to_vec().into()).into(),
         });
         let dumped = dump_bytes(Object::Code(Arc::new(object)), None, (3, 10).into(), 4).unwrap();
 

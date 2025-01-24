@@ -1,4 +1,4 @@
-use std::{any::Any, collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 use num_bigint::BigInt;
 use num_complex::Complex;
@@ -88,14 +88,21 @@ impl PyWriter {
                 .values()
                 .any(|x| **x == *obj.as_ref().unwrap());
 
+        // if cfg!(test) {
         let mut file = OpenOptions::new()
             .append(true)
             .create(true)
             .open("write_log.txt")
             .expect("Unable to open file");
 
-        writeln!(file, "Writing object: {:?} at index {}", obj, self.data.len())
-            .expect("Unable to write to file");
+        writeln!(
+            file,
+            "Writing object at index {}: {:?} ",
+            self.data.len(),
+            obj,
+        )
+        .expect("Unable to write to file");
+        // }
 
         match obj {
             None => self.w_kind(Kind::Null, is_ref),
@@ -238,56 +245,16 @@ impl PyWriter {
                         self.w_long(value.nlocals.try_into().unwrap());
                         self.w_long(value.stacksize.try_into().unwrap());
                         self.w_long(value.flags.bits().try_into().unwrap());
-                        self.w_object(Some(Object::Bytes(value.code.clone())), false);
-                        self.w_object(Some(Object::Tuple(value.consts.clone())), false);
-                        self.w_object(
-                            Some(Object::Tuple(Arc::new(
-                                value
-                                    .names
-                                    .clone()
-                                    .into_iter()
-                                    .map(|x| Object::String(x))
-                                    .collect::<Vec<_>>(),
-                            ))),
-                            false,
-                        );
-                        self.w_object(
-                            Some(Object::Tuple(Arc::new(
-                                value
-                                    .varnames
-                                    .clone()
-                                    .into_iter()
-                                    .map(|x| Object::String(x))
-                                    .collect::<Vec<_>>(),
-                            ))),
-                            false,
-                        );
-                        self.w_object(
-                            Some(Object::Tuple(Arc::new(
-                                value
-                                    .freevars
-                                    .clone()
-                                    .into_iter()
-                                    .map(|x| Object::String(x))
-                                    .collect::<Vec<_>>(),
-                            ))),
-                            false,
-                        );
-                        self.w_object(
-                            Some(Object::Tuple(Arc::new(
-                                value
-                                    .cellvars
-                                    .clone()
-                                    .into_iter()
-                                    .map(|x| Object::String(x))
-                                    .collect::<Vec<_>>(),
-                            ))),
-                            false,
-                        );
-                        self.w_object(Some(Object::String(value.filename.clone())), false);
-                        self.w_object(Some(Object::String(value.name.clone())), false);
+                        self.w_object(Some((*value.code).clone()), false);
+                        self.w_object(Some((*value.consts).clone()), false);
+                        self.w_object(Some((*value.names).clone()), false);
+                        self.w_object(Some((*value.varnames).clone()), false);
+                        self.w_object(Some((*value.freevars).clone()), false);
+                        self.w_object(Some((*value.cellvars).clone()), false);
+                        self.w_object(Some((*value.filename).clone()), false);
+                        self.w_object(Some((*value.name).clone()), false);
                         self.w_long(value.firstlineno.try_into().unwrap());
-                        self.w_object(Some(Object::Bytes(value.lnotab.clone())), false);
+                        self.w_object(Some((*value.lnotab).clone()), false);
                     }
                 }
             }

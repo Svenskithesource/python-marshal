@@ -433,48 +433,73 @@ impl PyReader {
                         let nlocals = self.r_long()?;
                         let stacksize = self.r_long()?;
                         let flags = CodeFlags::from_bits_truncate(self.r_long()? as u32);
-                        let code = extract_object!(Some(resolve_object_ref!(self.r_object()?, self.references)?), Object::Bytes(bytes) => bytes, Error::NullInTuple)?;
-                        let consts = extract_object!(Some(resolve_object_ref!(self.r_object()?, self.references)?), Object::Tuple(objs) => objs, Error::NullInTuple)?;
-                        let names = extract_strings_tuple!(
-                            extract_object!(Some(resolve_object_ref!(self.r_object()?, self.references)?), Object::Tuple(objs) => objs, Error::NullInTuple)?,
-                            self.references
-                        )?;
+                        let code = self
+                            .r_object()?
+                            .ok_or_else(|| Error::UnexpectedNull)?
+                            .into();
+                        let consts = self
+                            .r_object()?
+                            .ok_or_else(|| Error::UnexpectedNull)?
+                            .into();
+                        let names = self
+                            .r_object()?
+                            .ok_or_else(|| Error::UnexpectedNull)?
+                            .into();
 
-                        let varnames = extract_strings_tuple!(
-                            extract_object!(Some(resolve_object_ref!(self.r_object()?, self.references)?), Object::Tuple(objs) => objs, Error::NullInTuple)?,
-                            self.references
-                        )?;
-                        let freevars = extract_strings_tuple!(
-                            extract_object!(Some(resolve_object_ref!(self.r_object()?, self.references)?), Object::Tuple(objs) => objs, Error::NullInTuple)?,
-                            self.references
-                        )?;
-                        let cellvars = extract_strings_tuple!(
-                            extract_object!(Some(resolve_object_ref!(self.r_object()?, self.references)?), Object::Tuple(objs) => objs, Error::NullInTuple)?,
-                            self.references
-                        )?;
-                        let filename = extract_object!(Some(resolve_object_ref!(self.r_object()?, self.references)?), Object::String(string) => string, Error::UnexpectedObject)?;
-                        let name = extract_object!(Some(resolve_object_ref!(self.r_object()?, self.references)?), Object::String(string) => string, Error::UnexpectedObject)?;
+                        let varnames = self
+                            .r_object()?
+                            .ok_or_else(|| Error::UnexpectedNull)?
+                            .into();
+
+                        let freevars = self
+                            .r_object()?
+                            .ok_or_else(|| Error::UnexpectedNull)?
+                            .into();
+
+                        let cellvars = self
+                            .r_object()?
+                            .ok_or_else(|| Error::UnexpectedNull)?
+                            .into();
+
+                        let filename = self
+                            .r_object()?
+                            .ok_or_else(|| Error::UnexpectedNull)?
+                            .into();
+
+                        let name = self
+                            .r_object()?
+                            .ok_or_else(|| Error::UnexpectedNull)?
+                            .into();
+
                         let firstlineno = self.r_long()?;
-                        let lnotab = extract_object!(Some(resolve_object_ref!(self.r_object()?, self.references)?), Object::Bytes(bytes) => bytes, Error::NullInTuple)?;
 
-                        Object::Code(Arc::new(Code::V310(Code310 {
-                            argcount: argcount.try_into().unwrap(),
-                            posonlyargcount: posonlyargcount.try_into().unwrap(),
-                            kwonlyargcount: kwonlyargcount.try_into().unwrap(),
-                            nlocals: nlocals.try_into().unwrap(),
-                            stacksize: stacksize.try_into().unwrap(),
-                            flags,
-                            code,
-                            consts,
-                            names,
-                            varnames,
-                            freevars,
-                            cellvars,
-                            filename,
-                            name,
-                            firstlineno: firstlineno.try_into().unwrap(),
-                            lnotab,
-                        })))
+                        let lnotab = self
+                            .r_object()?
+                            .ok_or_else(|| Error::UnexpectedNull)?
+                            .into();
+
+                        Object::Code(
+                            Code::V310(Code310::new(
+                                argcount.try_into().unwrap(),
+                                posonlyargcount.try_into().unwrap(),
+                                kwonlyargcount.try_into().unwrap(),
+                                nlocals.try_into().unwrap(),
+                                stacksize.try_into().unwrap(),
+                                flags,
+                                code,
+                                consts,
+                                names,
+                                varnames,
+                                freevars,
+                                cellvars,
+                                filename,
+                                name,
+                                firstlineno.try_into().unwrap(),
+                                lnotab,
+                                &self.references,
+                            )?)
+                            .into(),
+                        )
                     }
                     _ => {
                         panic!("Unsupported version: {:?}", self.version);
@@ -497,18 +522,20 @@ impl PyReader {
             Kind::StopIteration | Kind::FlagRef => todo!(),
         };
 
-        let mut file = OpenOptions::new()
-            .append(true)
-            .create(true)
-            .open("read_log.txt")
-            .expect("Unable to open file");
+        // if cfg!(test) {
+            let mut file = OpenOptions::new()
+                .append(true)
+                .create(true)
+                .open("read_log.txt")
+                .expect("Unable to open file");
 
-        writeln!(
-            file,
-            "Reading object kind: {:?}, with value {:?} at index {}",
-            obj_kind, obj, cursor_pos
-        )
-        .expect("Unable to write to file");
+            writeln!(
+                file,
+                "Reading object at index {}, kind: {:?}, with value {:?}",
+                cursor_pos, obj_kind, obj,
+            )
+            .expect("Unable to write to file");
+        // }
 
         match (&obj, idx) {
             (None, _)

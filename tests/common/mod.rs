@@ -11,7 +11,7 @@ pub const PYTHON_VERSIONS: &[PyVersion] = &[PyVersion {
     patch: 1,
 }];
 
-fn download_repo(version: &PyVersion) {
+fn init_repo(version: &PyVersion) {
     // Download the standard library for the specified Python version if it doesn't exist
     if std::fs::metadata(Path::new(DATA_PATH).join(format!("cpython-{}", version))).is_err() {
         let resp = reqwest::blocking::get(format!(
@@ -48,6 +48,8 @@ fn download_repo(version: &PyVersion) {
                 }
             }
         }
+
+        compile_repo(version);
     }
 }
 
@@ -87,8 +89,7 @@ pub fn setup() {
             }
         }
 
-        download_repo(version); // Download the standard library for the specified Python version
-        compile_repo(version); // Compile the standard library
+        init_repo(version); // Initialize the standard library for the specified Python version
     }
 }
 
