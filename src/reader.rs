@@ -523,18 +523,21 @@ impl PyReader {
         };
 
         // if cfg!(test) {
-            let mut file = OpenOptions::new()
-                .append(true)
-                .create(true)
-                .open("read_log.txt")
-                .expect("Unable to open file");
+        let mut file = OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open("read_log.txt")
+            .expect("Unable to open file");
 
-            writeln!(
-                file,
-                "Reading object at index {}, kind: {:?}, with value {:?}",
-                cursor_pos, obj_kind, obj,
-            )
-            .expect("Unable to write to file");
+        writeln!(
+            file,
+            "Reading object at index {} ({}), kind: {:?}, with value {:?}",
+            cursor_pos,
+            self.cursor.position(),
+            obj_kind,
+            obj,
+        )
+        .expect("Unable to write to file");
         // }
 
         match (&obj, idx) {

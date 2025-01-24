@@ -437,6 +437,15 @@ mod tests {
             extract_object!(Some(kind), Object::Long(num) => num, Error::UnexpectedObject).unwrap(),
             BigInt::from(1).into()
         );
+
+        // 4294967295
+        let data = b"l\x03\x00\x00\x00\xff\x7f\xff\x7f\x03\x00";
+        let (kind, _) = load_bytes(data, (3, 10).into()).unwrap();
+
+        assert_eq!(
+            extract_object!(Some(kind), Object::Long(num) => num, Error::UnexpectedObject).unwrap(),
+            BigInt::from(4294967295u32).into()
+        );
     }
 
     #[test]
@@ -746,6 +755,12 @@ mod tests {
         // 1
         let data = b"i\x01\x00\x00\x00";
         let object = Object::Long(BigInt::from(1).into());
+        let dumped = dump_bytes(object, None, (3, 10).into(), 4).unwrap();
+        assert_eq!(data.to_vec(), dumped);
+
+        // 4294967295
+        let data = b"l\x03\x00\x00\x00\xff\x7f\xff\x7f\x03\x00";
+        let object = Object::Long(BigInt::from(4294967295u32).into());
         let dumped = dump_bytes(object, None, (3, 10).into(), 4).unwrap();
         assert_eq!(data.to_vec(), dumped);
     }

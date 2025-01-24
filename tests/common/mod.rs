@@ -73,7 +73,7 @@ fn compile_repo(version: &PyVersion) {
 
 pub fn setup() {
     for version in PYTHON_VERSIONS {
-        println!("Testing with Python version: {}", version);
+        println!("Setting up Python version: {}", version);
 
         std::fs::create_dir_all(DATA_PATH).expect("Failed to create data directory");
 

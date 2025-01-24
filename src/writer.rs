@@ -47,13 +47,14 @@ impl PyWriter {
         let mut value = num.clone().abs();
         let mut digits: Vec<u16> = vec![];
 
-        while num <= BigInt::ZERO {
+        while value > BigInt::ZERO {
             digits.push((&value & BigInt::from(0x7FFF)).to_u16().unwrap());
 
             value >>= 15;
         }
 
         self.w_long((digits.len() as i32) * if num.is_negative() { -1 } else { 1 });
+        
         for digit in digits {
             self.w_u16(digit);
         }
@@ -88,21 +89,8 @@ impl PyWriter {
                 .values()
                 .any(|x| **x == *obj.as_ref().unwrap());
 
-        // if cfg!(test) {
-        let mut file = OpenOptions::new()
-            .append(true)
-            .create(true)
-            .open("write_log.txt")
-            .expect("Unable to open file");
-
-        writeln!(
-            file,
-            "Writing object at index {}: {:?} ",
-            self.data.len(),
-            obj,
-        )
-        .expect("Unable to write to file");
-        // }
+        let obj_clone = obj.clone();
+        let cursor_pos = self.data.len();
 
         match obj {
             None => self.w_kind(Kind::Null, is_ref),
@@ -284,6 +272,23 @@ impl PyWriter {
                 }
             }
         };
+
+        // if cfg!(test) {
+        let mut file = OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open("write_log.txt")
+            .expect("Unable to open file");
+
+        writeln!(
+            file,
+            "Writing object at index {} ({}): {:?} ",
+            cursor_pos,
+            self.data.len(),
+            obj_clone,
+        )
+        .expect("Unable to write to file");
+        // }
     }
 
     pub fn write_object(&mut self, obj: Option<Object>) -> Vec<u8> {
