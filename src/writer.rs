@@ -1,10 +1,12 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{any::Any, collections::HashMap, sync::Arc};
 
 use num_bigint::BigInt;
 use num_complex::Complex;
 use num_traits::{Signed, ToPrimitive};
 
 use crate::{Code, Kind, Object};
+use std::fs::OpenOptions;
+use std::io::Write;
 
 pub struct PyWriter {
     data: Vec<u8>,
@@ -80,6 +82,21 @@ impl PyWriter {
     }
 
     fn w_object(&mut self, obj: Option<Object>, is_ref: bool) {
+        let is_ref = obj.as_ref().is_some()
+            && self
+                .references
+                .values()
+                .any(|x| **x == *obj.as_ref().unwrap());
+
+        let mut file = OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open("write_log.txt")
+            .expect("Unable to open file");
+
+        writeln!(file, "Writing object: {:?} at index {}", obj, self.data.len())
+            .expect("Unable to write to file");
+
         match obj {
             None => self.w_kind(Kind::Null, is_ref),
             Some(Object::None) => self.w_kind(Kind::None, is_ref),
@@ -98,7 +115,7 @@ impl PyWriter {
                 );
             }
             Some(Object::Long(num)) => {
-                let num = Arc::try_unwrap(num).unwrap();
+                let num = (*num).clone();
                 if num >= BigInt::from(i32::MIN) && num <= BigInt::from(i32::MAX) {
                     self.w_kind(Kind::Int, is_ref);
                     self.w_long(num.to_i32().unwrap());
@@ -133,20 +150,26 @@ impl PyWriter {
                 self.w_bytes(&*value);
             }
             Some(Object::String(value)) => {
-                let value = &*&value.value;
-                if self.marshal_version >= 4 && value.is_ascii() {
-                    if value.len() <= 255 {
-                        self.w_kind(Kind::ShortAscii, is_ref);
-                        self.w_u8(value.len() as u8);
-                        self.w_bytes(&value.clone().into_bytes());
-                    } else {
-                        self.w_kind(Kind::ASCII, is_ref);
-                        self.w_long(value.len() as i32);
-                        self.w_bytes(&value.clone().into_bytes());
+                let str_value = &*&value.value;
+
+                match value.kind {
+                    Kind::ASCII | Kind::ASCIIInterned => {
+                        self.w_kind(value.kind, is_ref);
+                        self.w_long(str_value.len() as i32);
+                        self.w_bytes(&str_value.clone().into_bytes());
                     }
-                } else {
-                    self.w_kind(Kind::Unicode, is_ref);
-                    self.w_string(value, false);
+                    Kind::ShortAscii | Kind::ShortAsciiInterned => {
+                        self.w_kind(value.kind, is_ref);
+                        self.w_u8(str_value.len() as u8);
+                        self.w_bytes(&str_value.clone().into_bytes());
+                    }
+                    Kind::Unicode => {
+                        self.w_kind(Kind::Unicode, is_ref);
+                        self.w_string(str_value, false);
+                    }
+                    _ => {
+                        panic!("Invalid string kind");
+                    }
                 }
             }
             Some(Object::Tuple(value)) => {

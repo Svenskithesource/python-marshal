@@ -1,9 +1,12 @@
 use core::panic;
 use std::{
     collections::{HashMap, HashSet},
+    fs::OpenOptions,
     io::{Cursor, Read},
     sync::Arc,
 };
+
+use std::io::Write;
 
 use num_bigint::{BigInt, BigUint};
 use num_complex::Complex;
@@ -226,6 +229,8 @@ impl PyReader {
     }
 
     fn r_object(&mut self) -> Result<Option<Object>, Error> {
+        let cursor_pos = self.cursor.position();
+
         let code = self.r_u8()?;
 
         let flag = (code & Kind::FlagRef as u8) != 0;
@@ -385,7 +390,7 @@ impl PyReader {
                 let value = self
                     .r_vec(length as usize, Kind::Set)?
                     .into_iter()
-                    .map(|o| match ObjectHashable::try_from(o) {
+                    .map(|o| match ObjectHashable::from_ref(o, &self.references) {
                         Ok(obj) => Ok(obj),
                         Err(_) => Err(Error::UnexpectedObject),
                     })
@@ -404,7 +409,7 @@ impl PyReader {
                 let value = Object::FrozenSet(
                     self.r_vec(length as usize, Kind::FrozenSet)?
                         .into_iter()
-                        .map(|o| match ObjectHashable::try_from(o) {
+                        .map(|o| match ObjectHashable::from_ref(o, &self.references) {
                             Ok(obj) => Ok(obj),
                             Err(_) => Err(Error::UnexpectedObject),
                         })
@@ -420,6 +425,7 @@ impl PyReader {
                     PyVersion {
                         major: 3,
                         minor: 10,
+                        ..
                     } => {
                         let argcount = self.r_long()?;
                         let posonlyargcount = self.r_long()?;
@@ -490,6 +496,19 @@ impl PyReader {
             Kind::Unknown => return Err(Error::InvalidKind(obj_kind)),
             Kind::StopIteration | Kind::FlagRef => todo!(),
         };
+
+        let mut file = OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open("read_log.txt")
+            .expect("Unable to open file");
+
+        writeln!(
+            file,
+            "Reading object kind: {:?}, with value {:?} at index {}",
+            obj_kind, obj, cursor_pos
+        )
+        .expect("Unable to write to file");
 
         match (&obj, idx) {
             (None, _)

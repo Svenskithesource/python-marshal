@@ -14,6 +14,7 @@ use ordered_float::OrderedFloat;
 use reader::PyReader;
 use std::{
     collections::{HashMap, HashSet},
+    io::{Read, Write},
     path::Path,
     sync::Arc,
 };
@@ -122,8 +123,18 @@ pub struct PyString {
 impl From<String> for PyString {
     fn from(value: String) -> Self {
         Self {
-            value,
-            kind: Kind::Unicode, // Default kind
+            value: value.clone(),
+            kind: {
+                if value.is_ascii() {
+                    if value.len() <= 255 {
+                        Kind::ShortAscii
+                    } else {
+                        Kind::ASCII
+                    }
+                } else {
+                    Kind::Unicode
+                }
+            }, // Default kind
         }
     }
 }
@@ -170,6 +181,30 @@ pub enum ObjectHashable {
     String    (Arc<PyString>),
     Tuple     (Arc<Vec<ObjectHashable>>),
     FrozenSet (Arc<HashableHashSet<ObjectHashable>>),
+    LoadRef   (usize), // You need to ensure that the reference is hashable
+    StoreRef  (usize), // Same as above
+}
+
+impl ObjectHashable {
+    pub fn from_ref(obj: Object, references: &HashMap<usize, Arc<Object>>) -> Result<Self, Error> {
+        // If the object is a reference, resolve it and make sure it's hashable
+        match obj {
+            Object::LoadRef(index) | Object::StoreRef(index) => {
+                if let Some(obj) = references.get(&index) {
+                    let obj = obj.as_ref().clone();
+                    Self::try_from(obj.clone())?;
+                    match obj {
+                        Object::LoadRef(index) => Ok(Self::LoadRef(index)),
+                        Object::StoreRef(index) => Ok(Self::StoreRef(index)),
+                        _ => unreachable!(),
+                    }
+                } else {
+                    Err(Error::InvalidReference)
+                }
+            }
+            _ => Self::try_from(obj),
+        }
+    }
 }
 
 impl TryFrom<Object> for ObjectHashable {
@@ -227,11 +262,13 @@ impl From<ObjectHashable> for Object {
             ObjectHashable::FrozenSet(s) => {
                 Object::FrozenSet(s.iter().cloned().collect::<HashSet<_>>().into())
             }
+            ObjectHashable::LoadRef(index) => Object::LoadRef(index),
+            ObjectHashable::StoreRef(index) => Object::StoreRef(index),
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PycFile {
     pub python_version: PyVersion,
     pub timestamp: Option<u32>, // Only present in Python 3.7 and later
@@ -255,8 +292,8 @@ pub fn load_bytes(
     Ok((object, py_reader.references))
 }
 
-pub fn load_pyc(filepath: impl AsRef<Path>) -> Result<PycFile, Error> {
-    let data = std::fs::read(filepath.as_ref())?;
+pub fn load_pyc(data: impl Read) -> Result<PycFile, Error> {
+    let data = data.bytes().collect::<Result<Vec<u8>, _>>()?;
 
     let magic_number = u32::from_le_bytes(data[0..4].try_into().unwrap());
     let python_version = PyVersion::try_from(magic_number)?;
@@ -284,6 +321,22 @@ pub fn load_pyc(filepath: impl AsRef<Path>) -> Result<PycFile, Error> {
         object,
         references,
     })
+}
+
+pub fn dump_pyc(writer: &mut impl Write, pyc_file: PycFile) -> Result<(), Error> {
+    let mut buf = Vec::new();
+    let mut py_writer = PyWriter::new(pyc_file.references, 4);
+
+    buf.extend_from_slice(&u32::to_le_bytes(pyc_file.python_version.to_magic()?));
+    if let Some(timestamp) = pyc_file.timestamp {
+        buf.extend_from_slice(&u32::to_le_bytes(timestamp));
+    }
+    buf.extend_from_slice(&u64::to_le_bytes(pyc_file.hash));
+    buf.extend_from_slice(&py_writer.write_object(Some(pyc_file.object)));
+
+    std::io::copy(&mut buf.as_slice(), writer)?;
+
+    Ok(())
 }
 
 pub fn dump_bytes(
@@ -609,7 +662,7 @@ mod tests {
         let mut temp_file = NamedTempFile::new().unwrap();
         temp_file.write_all(data).unwrap();
 
-        let obj = load_pyc(temp_file.path()).unwrap();
+        let obj = load_pyc(&data[..]).unwrap();
 
         dbg!(&obj); // TODO: Add assertions
     }
