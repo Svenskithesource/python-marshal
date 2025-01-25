@@ -4,8 +4,10 @@ mod reader;
 mod writer;
 
 use bitflags::bitflags;
+use bstr::BString;
 use error::Error;
 use hashable::HashableHashSet;
+use indexmap::{IndexMap, IndexSet};
 use magic::PyVersion;
 use num_bigint::BigInt;
 use num_complex::Complex;
@@ -13,7 +15,7 @@ use num_derive::{FromPrimitive, ToPrimitive};
 use ordered_float::OrderedFloat;
 use reader::PyReader;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     io::{Read, Write},
     sync::Arc,
 };
@@ -180,14 +182,14 @@ pub enum Code {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct PyString {
-    pub value: String,
+    pub value: BString,
     pub kind: Kind,
 }
 
 impl From<String> for PyString {
     fn from(value: String) -> Self {
         Self {
-            value: value.clone(),
+            value: value.clone().into(),
             kind: {
                 if value.is_ascii() {
                     if value.len() <= 255 {
@@ -204,7 +206,7 @@ impl From<String> for PyString {
 }
 
 impl PyString {
-    pub fn new(value: String, kind: Kind) -> Self {
+    pub fn new(value: BString, kind: Kind) -> Self {
         Self { value, kind }
     }
 }
@@ -223,9 +225,9 @@ pub enum Object {
     String    (Arc<PyString>),
     Tuple     (Arc<Vec<Object>>),
     List      (Arc<Vec<Arc<Object>>>),
-    Dict      (Arc<HashMap<ObjectHashable, Arc<Object>>>),
-    Set       (Arc<HashSet<ObjectHashable>>),
-    FrozenSet (Arc<HashSet<ObjectHashable>>),
+    Dict      (Arc<IndexMap<ObjectHashable, Arc<Object>>>),
+    Set       (Arc<IndexSet<ObjectHashable>>),
+    FrozenSet (Arc<IndexSet<ObjectHashable>>),
     Code      (Arc<Code>),
     LoadRef   (usize),
     StoreRef  (usize),
@@ -256,7 +258,7 @@ impl ObjectHashable {
             Object::LoadRef(index) | Object::StoreRef(index) => {
                 if let Some(resolved_obj) = references.get(&index) {
                     let resolved_obj = resolved_obj.as_ref().clone();
-                    Self::try_from(resolved_obj.clone())?;
+                    Self::from_ref(resolved_obj.clone(), references)?;
                     match obj {
                         Object::LoadRef(index) => Ok(Self::LoadRef(index)),
                         Object::StoreRef(index) => Ok(Self::StoreRef(index)),
@@ -266,6 +268,13 @@ impl ObjectHashable {
                     Err(Error::InvalidReference)
                 }
             }
+            Object::Tuple(t) => Ok(Self::Tuple(
+                // Tuple can contain references
+                t.iter()
+                    .map(|o| Self::from_ref(o.clone(), references).unwrap())
+                    .collect::<Vec<_>>()
+                    .into(),
+            )),
             _ => Self::try_from(obj),
         }
     }
@@ -324,7 +333,7 @@ impl From<ObjectHashable> for Object {
                     .into(),
             ),
             ObjectHashable::FrozenSet(s) => {
-                Object::FrozenSet(s.iter().cloned().collect::<HashSet<_>>().into())
+                Object::FrozenSet(s.iter().cloned().collect::<IndexSet<_>>().into())
             }
             ObjectHashable::LoadRef(index) => Object::LoadRef(index),
             ObjectHashable::StoreRef(index) => Object::StoreRef(index),
@@ -420,6 +429,7 @@ pub fn dump_bytes(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
     use std::io::Write;
 
     use tempfile::NamedTempFile;
@@ -492,7 +502,17 @@ mod tests {
         assert_eq!(
             extract_object!(Some(kind), Object::String(string) => string, Error::UnexpectedObject)
                 .unwrap(),
-            PyString::new("test".to_string(), Kind::ShortAsciiInterned).into()
+            PyString::new("test".into(), Kind::ShortAsciiInterned).into()
+        );
+
+        // "\xe9"
+        let data = b"u\x03\x00\x00\x00\xed\xb2\x80";
+        let (kind, _) = load_bytes(data, (3, 10).into()).unwrap();
+
+        assert_eq!(
+            extract_object!(Some(kind), Object::String(string) => string, Error::UnexpectedObject)
+                .unwrap(),
+            PyString::new(BString::new([237, 178, 128].to_vec()), Kind::Unicode).into()
         );
     }
 
@@ -522,8 +542,8 @@ mod tests {
             )
             .unwrap(),
             vec![
-                PyString::new("a".to_string(), Kind::ShortAsciiInterned).into(),
-                PyString::new("b".to_string(), Kind::ShortAsciiInterned).into()
+                PyString::new("a".into(), Kind::ShortAsciiInterned).into(),
+                PyString::new("b".into(), Kind::ShortAsciiInterned).into()
             ]
         );
     }
@@ -552,8 +572,8 @@ mod tests {
             )
             .unwrap(),
             vec![
-                PyString::new("a".to_string(), Kind::ShortAsciiInterned).into(),
-                PyString::new("b".to_string(), Kind::ShortAsciiInterned).into()
+                PyString::new("a".into(), Kind::ShortAsciiInterned).into(),
+                PyString::new("b".into(), Kind::ShortAsciiInterned).into()
             ]
         );
     }
@@ -615,12 +635,12 @@ mod tests {
             {
                 let mut map = HashMap::new();
                 map.insert(
-                    PyString::new("a".to_string(), Kind::ShortAsciiInterned).into(),
-                    PyString::new("b".to_string(), Kind::ShortAsciiInterned).into(),
+                    PyString::new("a".into(), Kind::ShortAsciiInterned).into(),
+                    PyString::new("b".into(), Kind::ShortAsciiInterned).into(),
                 );
                 map.insert(
-                    PyString::new("c".to_string(), Kind::ShortAsciiInterned).into(),
-                    PyString::new("d".to_string(), Kind::ShortAsciiInterned).into(),
+                    PyString::new("c".into(), Kind::ShortAsciiInterned).into(),
+                    PyString::new("d".into(), Kind::ShortAsciiInterned).into(),
                 );
                 map
             }
@@ -652,8 +672,8 @@ mod tests {
             .unwrap(),
             {
                 let mut set = HashSet::new();
-                set.insert(PyString::new("a".to_string(), Kind::ShortAsciiInterned).into());
-                set.insert(PyString::new("b".to_string(), Kind::ShortAsciiInterned).into());
+                set.insert(PyString::new("a".into(), Kind::ShortAsciiInterned).into());
+                set.insert(PyString::new("b".into(), Kind::ShortAsciiInterned).into());
                 set
             }
         );
@@ -684,8 +704,8 @@ mod tests {
             .unwrap(),
             {
                 let mut set = HashSet::new();
-                set.insert(PyString::new("a".to_string(), Kind::ShortAsciiInterned).into());
-                set.insert(PyString::new("b".to_string(), Kind::ShortAsciiInterned).into());
+                set.insert(PyString::new("a".into(), Kind::ShortAsciiInterned).into());
+                set.insert(PyString::new("b".into(), Kind::ShortAsciiInterned).into());
                 set
             }
         );
@@ -726,11 +746,11 @@ mod tests {
                 assert_eq!(inner_cellvars.len(), 0);
                 assert_eq!(
                     inner_filename,
-                    PyString::new("<stdin>".to_string(), Kind::ShortAscii).into()
+                    PyString::new("<stdin>".into(), Kind::ShortAscii).into()
                 );
                 assert_eq!(
                     inner_name,
-                    PyString::new("f".to_string(), Kind::ShortAsciiInterned).into()
+                    PyString::new("f".into(), Kind::ShortAsciiInterned).into()
                 );
                 assert_eq!(code.firstlineno, 1);
                 assert_eq!(inner_lnotab.len(), 2);
@@ -799,6 +819,14 @@ mod tests {
         let object = Object::String(PyString::from("test".to_string()).into());
         let dumped = dump_bytes(object, None, (3, 10).into(), 4).unwrap();
         assert_eq!(data.to_vec(), dumped);
+
+        // "\xe9"
+        let data = b"u\x03\x00\x00\x00\xed\xb2\x80";
+        let object = Object::String(
+            PyString::new(BString::new([237, 178, 128].to_vec()), Kind::Unicode).into(),
+        );
+        let dumped = dump_bytes(object, None, (3, 10).into(), 4).unwrap();
+        assert_eq!(data.to_vec(), dumped);
     }
 
     #[test]
@@ -847,7 +875,7 @@ mod tests {
     fn test_dump_dict() {
         // Empty dict
         let data = b"{0";
-        let object = Object::Dict(HashMap::new().into());
+        let object = Object::Dict(IndexMap::new().into());
         let dumped = dump_bytes(object, None, (3, 10).into(), 4).unwrap();
         assert_eq!(data.to_vec(), dumped);
 
@@ -856,7 +884,7 @@ mod tests {
         let data2 = b"{z\x01cz\x01dz\x01az\x01b0"; // Order is not guaranteed
         let object = Object::Dict(
             {
-                let mut map = HashMap::new();
+                let mut map = IndexMap::new();
                 map.insert(
                     ObjectHashable::String(PyString::from("a".to_string()).into()),
                     Object::String(PyString::from("b".to_string()).into()).into(),
@@ -877,7 +905,7 @@ mod tests {
     fn test_dump_set() {
         // Empty set
         let data = b"<\x00\x00\x00\x00";
-        let object = Object::Set(HashSet::new().into());
+        let object = Object::Set(IndexSet::new().into());
         let dumped = dump_bytes(object, None, (3, 10).into(), 4).unwrap();
         assert_eq!(data.to_vec(), dumped);
 
@@ -886,7 +914,7 @@ mod tests {
         let data2 = b"<\x02\x00\x00\x00z\x01bz\x01a"; // Order is not guaranteed
         let object = Object::Set(
             {
-                let mut set = HashSet::new();
+                let mut set = IndexSet::new();
                 set.insert(ObjectHashable::String(
                     PyString::from("a".to_string()).into(),
                 ));
@@ -905,7 +933,7 @@ mod tests {
     fn test_dump_frozenset() {
         // Empty frozenset
         let data = b">\x00\x00\x00\x00";
-        let object = Object::FrozenSet(HashSet::new().into());
+        let object = Object::FrozenSet(IndexSet::new().into());
         let dumped = dump_bytes(object, None, (3, 10).into(), 4).unwrap();
         assert_eq!(data.to_vec(), dumped);
 
@@ -914,7 +942,7 @@ mod tests {
         let data2 = b">\x02\x00\x00\x00z\x01bz\x01a";
         let object = Object::FrozenSet(
             {
-                let mut set = HashSet::new();
+                let mut set = IndexSet::new();
                 set.insert(ObjectHashable::String(
                     PyString::from("a".to_string()).into(),
                 ));

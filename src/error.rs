@@ -1,4 +1,7 @@
-use std::fmt::{Display, Formatter, Result};
+use std::{
+    fmt::{Display, Formatter, Result},
+    string::FromUtf16Error,
+};
 
 use crate::{magic::PyVersion, Kind, Object};
 
@@ -16,7 +19,8 @@ pub enum Error {
     InvalidKind(Kind),
     InvalidObject(Object),
     InvalidData(std::io::Error),
-    InvalidString(std::string::FromUtf8Error),
+    InvalidString,
+    InvalidUtf16String(std::string::FromUtf16Error),
     UnexpectedObject,
     InvalidReference,
     UnexpectedNull,
@@ -46,7 +50,12 @@ impl Display for Error {
             Error::InvalidKind(kind) => write!(f, "invalid kind: {:?}", kind),
             Error::InvalidObject(obj) => write!(f, "invalid object: {:?}", obj),
             Error::InvalidData(err) => write!(f, "bad marshal data: {:?}", err),
-            Error::InvalidString(err) => write!(f, "bad marshal data (invalid string): {:?}", err),
+            Error::InvalidString => {
+                write!(f, "bad marshal data (invalid string)")
+            }
+            Error::InvalidUtf16String(err) => {
+                write!(f, "bad marshal data (invalid utf16 string): {:?}", err)
+            }
             Error::UnexpectedObject => write!(f, "unexpected object"),
             Error::InvalidReference => write!(f, "bad marshal data (invalid reference)"),
             Error::UnexpectedNull => write!(f, "unexpected NULL object"),
@@ -62,8 +71,8 @@ impl From<std::io::Error> for Error {
     }
 }
 
-impl From<std::string::FromUtf8Error> for Error {
-    fn from(err: std::string::FromUtf8Error) -> Self {
-        Error::InvalidString(err)
+impl From<std::string::FromUtf16Error> for Error {
+    fn from(err: FromUtf16Error) -> Self {
+        Error::InvalidUtf16String(err)
     }
 }

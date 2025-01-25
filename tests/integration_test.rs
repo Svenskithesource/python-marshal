@@ -28,10 +28,6 @@ fn test_recompile_standard_lib() {
         let pyc_files = common::find_pyc_files(version);
 
         for pyc_file in pyc_files {
-            if !format!("{:?}", pyc_file).contains(r"__main__.cpython-310.pyc") {
-                continue;
-            }
-
             delete_debug_files();
             println!("Testing pyc file: {:?}", pyc_file);
             let mut file = std::fs::File::open(&pyc_file).expect("Failed to open pyc file");

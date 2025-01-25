@@ -1,13 +1,12 @@
 use core::panic;
 use std::{
-    collections::{HashMap, HashSet},
-    fs::OpenOptions,
+    collections::HashMap,
     io::{Cursor, Read},
     sync::Arc,
 };
 
-use std::io::Write;
-
+use bstr::BString;
+use indexmap::{IndexMap, IndexSet};
 use num_bigint::{BigInt, BigUint};
 use num_complex::Complex;
 use num_traits::FromPrimitive;
@@ -165,17 +164,16 @@ impl PyReader {
         Ok(buf)
     }
 
-    fn r_string(&mut self, length: usize) -> Result<String, Error> {
+    fn r_string(&mut self, length: usize) -> Result<BString, Error> {
         let bytes = self.r_bytes(length)?;
-        let string = String::from_utf8(bytes)?;
-        Ok(string)
+        Ok(BString::new(bytes))
     }
 
     fn r_float_str(&mut self) -> Result<f64, Error> {
         let n = self.r_u8()?;
         let s = self.r_string(n as usize)?;
-        Ok(s.parse()
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?)
+
+        s.to_string().parse().map_err(|_| Error::InvalidString)
     }
 
     fn r_float_bin(&mut self) -> Result<f64, std::io::Error> {
@@ -206,8 +204,8 @@ impl PyReader {
         Ok(vec)
     }
 
-    fn r_hashmap(&mut self) -> Result<HashMap<ObjectHashable, Object>, Error> {
-        let mut map = HashMap::new();
+    fn r_hashmap(&mut self) -> Result<IndexMap<ObjectHashable, Object>, Error> {
+        let mut map = IndexMap::new();
 
         loop {
             match self.r_object()? {
@@ -379,7 +377,7 @@ impl PyReader {
                     self.r_hashmap()?
                         .into_iter()
                         .map(|(k, v)| (k, v.into()))
-                        .collect::<HashMap<_, _>>()
+                        .collect::<IndexMap<_, _>>()
                         .into(),
                 );
 
@@ -394,7 +392,7 @@ impl PyReader {
                         Ok(obj) => Ok(obj),
                         Err(_) => Err(Error::UnexpectedObject),
                     })
-                    .collect::<Result<HashSet<_>, _>>()?
+                    .collect::<Result<IndexSet<_>, _>>()?
                     .into();
 
                 if flag {
@@ -413,7 +411,7 @@ impl PyReader {
                             Ok(obj) => Ok(obj),
                             Err(_) => Err(Error::UnexpectedObject),
                         })
-                        .collect::<Result<HashSet<_>, _>>()?
+                        .collect::<Result<IndexSet<_>, _>>()?
                         .into(),
                 )
                 .into();
@@ -523,21 +521,21 @@ impl PyReader {
         };
 
         // if cfg!(test) {
-        let mut file = OpenOptions::new()
-            .append(true)
-            .create(true)
-            .open("read_log.txt")
-            .expect("Unable to open file");
+        // let mut file = OpenOptions::new()
+        //     .append(true)
+        //     .create(true)
+        //     .open("read_log.txt")
+        //     .expect("Unable to open file");
 
-        writeln!(
-            file,
-            "Reading object at index {} ({}), kind: {:?}, with value {:?}",
-            cursor_pos,
-            self.cursor.position(),
-            obj_kind,
-            obj,
-        )
-        .expect("Unable to write to file");
+        // writeln!(
+        //     file,
+        //     "Reading object at index {} ({}), kind: {:?}, with value {:?}",
+        //     cursor_pos,
+        //     self.cursor.position(),
+        //     obj_kind,
+        //     obj,
+        // )
+        // .expect("Unable to write to file");
         // }
 
         match (&obj, idx) {

@@ -1,12 +1,11 @@
 use std::{collections::HashMap, sync::Arc};
 
+use bstr::BString;
 use num_bigint::BigInt;
 use num_complex::Complex;
 use num_traits::{Signed, ToPrimitive};
 
 use crate::{Code, Kind, Object};
-use std::fs::OpenOptions;
-use std::io::Write;
 
 pub struct PyWriter {
     data: Vec<u8>,
@@ -54,20 +53,21 @@ impl PyWriter {
         }
 
         self.w_long((digits.len() as i32) * if num.is_negative() { -1 } else { 1 });
-        
+
         for digit in digits {
             self.w_u16(digit);
         }
     }
 
-    fn w_string(&mut self, value: &str, as_u8: bool) {
+    fn w_string(&mut self, value: &BString, as_u8: bool) {
         if as_u8 {
             self.w_u8(value.len() as u8);
         } else {
             self.w_long(value.len() as i32);
         }
 
-        self.data.extend_from_slice(value.as_bytes());
+        self.data
+            .extend_from_slice(&value.iter().map(|&x| x as u8).collect::<Vec<u8>>());
     }
 
     fn w_float_bin(&mut self, value: f64) {
@@ -75,14 +75,14 @@ impl PyWriter {
     }
 
     fn w_float_str(&mut self, value: f64) {
-        self.w_string(&value.to_string(), true);
+        self.w_string(&value.to_string().into(), true);
     }
 
     fn w_bytes(&mut self, value: &Vec<u8>) {
         self.data.extend_from_slice(&value);
     }
 
-    fn w_object(&mut self, obj: Option<Object>, is_ref: bool) {
+    fn w_object(&mut self, obj: Option<Object>) {
         let is_ref = obj.as_ref().is_some()
             && self
                 .references
@@ -151,12 +151,12 @@ impl PyWriter {
                     Kind::ASCII | Kind::ASCIIInterned => {
                         self.w_kind(value.kind, is_ref);
                         self.w_long(str_value.len() as i32);
-                        self.w_bytes(&str_value.clone().into_bytes());
+                        self.w_bytes(&str_value.iter().map(|&x| x as u8).collect::<Vec<u8>>());
                     }
                     Kind::ShortAscii | Kind::ShortAsciiInterned => {
                         self.w_kind(value.kind, is_ref);
                         self.w_u8(str_value.len() as u8);
-                        self.w_bytes(&str_value.clone().into_bytes());
+                        self.w_bytes(&str_value.iter().map(|&x| x as u8).collect::<Vec<u8>>());
                     }
                     Kind::Unicode => {
                         self.w_kind(Kind::Unicode, is_ref);
@@ -179,7 +179,7 @@ impl PyWriter {
                 }
 
                 for item in value.iter() {
-                    self.w_object(Some(item.clone()), false);
+                    self.w_object(Some(item.clone()));
                 }
             }
             Some(Object::List(value)) => {
@@ -189,14 +189,14 @@ impl PyWriter {
                 self.w_long(size as i32);
 
                 for item in value.iter() {
-                    self.w_object(Some((*item.clone()).clone()), false);
+                    self.w_object(Some((*item.clone()).clone()));
                 }
             }
             Some(Object::Dict(value)) => {
                 self.w_kind(Kind::Dict, is_ref);
                 for (key, value) in value.iter() {
-                    self.w_object(Some(key.clone().into()), false);
-                    self.w_object(Some((*value.clone()).clone()), false);
+                    self.w_object(Some(key.clone().into()));
+                    self.w_object(Some((*value.clone()).clone()));
                 }
 
                 self.w_kind(Kind::Null, is_ref); // NULL object terminated
@@ -208,7 +208,7 @@ impl PyWriter {
                 self.w_long(size as i32);
 
                 for item in value.iter() {
-                    self.w_object(Some(item.clone().into()), false);
+                    self.w_object(Some(item.clone().into()));
                 }
             }
             Some(Object::FrozenSet(value)) => {
@@ -218,7 +218,7 @@ impl PyWriter {
                 self.w_long(size as i32);
 
                 for item in value.iter() {
-                    self.w_object(Some(item.clone().into()), false);
+                    self.w_object(Some(item.clone().into()));
                 }
             }
             Some(Object::Code(value)) => {
@@ -233,16 +233,16 @@ impl PyWriter {
                         self.w_long(value.nlocals.try_into().unwrap());
                         self.w_long(value.stacksize.try_into().unwrap());
                         self.w_long(value.flags.bits().try_into().unwrap());
-                        self.w_object(Some((*value.code).clone()), false);
-                        self.w_object(Some((*value.consts).clone()), false);
-                        self.w_object(Some((*value.names).clone()), false);
-                        self.w_object(Some((*value.varnames).clone()), false);
-                        self.w_object(Some((*value.freevars).clone()), false);
-                        self.w_object(Some((*value.cellvars).clone()), false);
-                        self.w_object(Some((*value.filename).clone()), false);
-                        self.w_object(Some((*value.name).clone()), false);
+                        self.w_object(Some((*value.code).clone()));
+                        self.w_object(Some((*value.consts).clone()));
+                        self.w_object(Some((*value.names).clone()));
+                        self.w_object(Some((*value.varnames).clone()));
+                        self.w_object(Some((*value.freevars).clone()));
+                        self.w_object(Some((*value.cellvars).clone()));
+                        self.w_object(Some((*value.filename).clone()));
+                        self.w_object(Some((*value.name).clone()));
                         self.w_long(value.firstlineno.try_into().unwrap());
-                        self.w_object(Some((*value.lnotab).clone()), false);
+                        self.w_object(Some((*value.lnotab).clone()));
                     }
                 }
             }
@@ -267,32 +267,32 @@ impl PyWriter {
                         panic!("Reference not found in references list");
                     }
                     Some(reference) => {
-                        self.w_object(Some((**reference).clone()), true);
+                        self.w_object(Some((**reference).clone()));
                     }
                 }
             }
         };
 
         // if cfg!(test) {
-        let mut file = OpenOptions::new()
-            .append(true)
-            .create(true)
-            .open("write_log.txt")
-            .expect("Unable to open file");
+        // let mut file = OpenOptions::new()
+        //     .append(true)
+        //     .create(true)
+        //     .open("write_log.txt")
+        //     .expect("Unable to open file");
 
-        writeln!(
-            file,
-            "Writing object at index {} ({}): {:?} ",
-            cursor_pos,
-            self.data.len(),
-            obj_clone,
-        )
-        .expect("Unable to write to file");
+        // writeln!(
+        //     file,
+        //     "Writing object at index {} ({}): {:?} ",
+        //     cursor_pos,
+        //     self.data.len(),
+        //     obj_clone,
+        // )
+        // .expect("Unable to write to file");
         // }
     }
 
     pub fn write_object(&mut self, obj: Option<Object>) -> Vec<u8> {
-        self.w_object(obj, false);
+        self.w_object(obj);
 
         return self.data.clone();
     }
