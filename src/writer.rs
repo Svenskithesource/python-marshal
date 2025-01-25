@@ -1,9 +1,10 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, fs::OpenOptions, sync::Arc};
 
 use bstr::BString;
 use num_bigint::BigInt;
 use num_complex::Complex;
 use num_traits::{Signed, ToPrimitive};
+use std::io::Write;
 
 use crate::{Code, Kind, Object};
 
@@ -84,10 +85,30 @@ impl PyWriter {
 
     fn w_object(&mut self, obj: Option<Object>) {
         let is_ref = obj.as_ref().is_some()
-            && self
-                .references
-                .values()
-                .any(|x| **x == *obj.as_ref().unwrap());
+            && self.references.values().any(|x| match **x {
+                Object::Float(f) => {
+                    // Compare floating point numbers by their bytes
+                    if let Object::Float(ref value) = *obj.as_ref().unwrap() {
+                        f.to_le_bytes() == value.to_le_bytes()
+                    } else {
+                        false
+                    }
+                }
+                Object::Complex(Complex { re, im }) => {
+                    // Compare floating point numbers by their bytes
+                    if let Object::Complex(Complex {
+                        re: ref re2,
+                        im: ref im2,
+                    }) = *obj.as_ref().unwrap()
+                    {
+                        re.to_le_bytes() == re2.to_le_bytes()
+                            && im.to_le_bytes() == im2.to_le_bytes()
+                    } else {
+                        false
+                    }
+                }
+                _ => **x == *obj.as_ref().unwrap(),
+            });
 
         let obj_clone = obj.clone();
         let cursor_pos = self.data.len();
@@ -148,7 +169,7 @@ impl PyWriter {
                 let str_value = &*&value.value;
 
                 match value.kind {
-                    Kind::ASCII | Kind::ASCIIInterned => {
+                    Kind::ASCII | Kind::ASCIIInterned | Kind::Interned => {
                         self.w_kind(value.kind, is_ref);
                         self.w_long(str_value.len() as i32);
                         self.w_bytes(&str_value.iter().map(|&x| x as u8).collect::<Vec<u8>>());
@@ -163,7 +184,7 @@ impl PyWriter {
                         self.w_string(str_value, false);
                     }
                     _ => {
-                        panic!("Invalid string kind");
+                        panic!("Invalid string kind: {:?}", value.kind);
                     }
                 }
             }

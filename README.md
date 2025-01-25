@@ -29,6 +29,9 @@ let (object, references) = load_bytes(data, python_version.into()).unwrap();
 ```
 `references` is a hashmap that maps the index of the reference to the object it references.
 
+## Testing
+This library is very thoroughly tested. To ensure it can output the exact same bytes as the input data, we rewrite the whole standard library and compare the output with the input. It produces a 1:1 copy of the input data.
+You can run the tests with `cargo test` (integration tests only work on Windows).
 
 ## Contributing
 

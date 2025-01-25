@@ -43,6 +43,8 @@ fn test_recompile_standard_lib() {
                 std::fs::write("debug_output.txt", debug_output)
                     .expect("Failed to write debug output to file");
 
+                const CONTEXT_SIZE: usize = 50;
+
                 diff_bytearrays(&original, &dumped)
                     .iter()
                     .for_each(|(i, a, b)| {
@@ -57,9 +59,13 @@ fn test_recompile_standard_lib() {
                                 .unwrap_or_else(|| Kind::Unknown)
                         );
 
-                        let start = if *i >= 10 { *i - 10 } else { 0 };
-                        let end = if *i + 10 < original.len() {
-                            *i + 10
+                        let start = if *i >= CONTEXT_SIZE {
+                            *i - CONTEXT_SIZE
+                        } else {
+                            0
+                        };
+                        let end = if *i + CONTEXT_SIZE < original.len() {
+                            *i + CONTEXT_SIZE
                         } else {
                             original.len() - 1
                         };

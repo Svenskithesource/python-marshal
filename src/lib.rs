@@ -233,6 +233,8 @@ pub enum Object {
     StoreRef  (usize),
 }
 
+impl Eq for Object {} // Required to check if Code objects are equal with float values
+
 #[rustfmt::skip]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum ObjectHashable {

@@ -1,6 +1,7 @@
 use core::panic;
 use std::{
     collections::HashMap,
+    fs::OpenOptions,
     io::{Cursor, Read},
     sync::Arc,
 };
@@ -10,6 +11,7 @@ use indexmap::{IndexMap, IndexSet};
 use num_bigint::{BigInt, BigUint};
 use num_complex::Complex;
 use num_traits::FromPrimitive;
+use std::io::Write;
 
 use crate::{
     error::Error, Code, Code310, CodeFlags, Kind, Object, ObjectHashable, PyString, PyVersion,
@@ -430,7 +432,7 @@ impl PyReader {
                         let kwonlyargcount = self.r_long()?;
                         let nlocals = self.r_long()?;
                         let stacksize = self.r_long()?;
-                        let flags = CodeFlags::from_bits_truncate(self.r_long()? as u32);
+                        let flags = CodeFlags::from_bits_retain(self.r_long()? as u32);
                         let code = self
                             .r_object()?
                             .ok_or_else(|| Error::UnexpectedNull)?
