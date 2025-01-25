@@ -3,7 +3,7 @@ name = "python_marshal"
 license = "GPL-3.0-or-later"
 description = "A Rust library for reading and writing Python marshal files."
 readme = "README.md"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 
 [dependencies]
@@ -24,3 +24,11 @@ tempfile = "3.15.0"
 reqwest = { version = "0.12.12", features = ["blocking"] }
 zip = "2.2.2"
 cmd_lib = "1.9.5"
+
+# Enable max optimizations for dependencies, but not for our code:
+[profile.dev.package."*"]
+opt-level = 3
+
+# Enable only a small amount of optimization in debug mode
+[profile.dev]
+opt-level = 1

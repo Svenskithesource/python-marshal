@@ -19,7 +19,7 @@ use crate::{
 
 pub struct PyReader {
     cursor: Cursor<Vec<u8>>,
-    pub references: HashMap<usize, Arc<Object>>,
+    pub references: HashMap<usize, Object>,
     version: PyVersion,
 }
 
@@ -46,7 +46,7 @@ macro_rules! resolve_object_ref {
                     let reference = $refs.get(&index);
 
                     match reference {
-                        Some(obj) => Ok((**obj).clone()),
+                        Some(obj) => Ok((*obj).clone()),
                         None => Err(crate::error::Error::InvalidReference),
                     }
                 }
@@ -224,7 +224,7 @@ impl PyReader {
         Ok(map)
     }
 
-    fn set_reference(&mut self, index: usize, obj: Arc<Object>) {
+    fn set_reference(&mut self, index: usize, obj: Object) {
         self.references.insert(index, obj);
     }
 

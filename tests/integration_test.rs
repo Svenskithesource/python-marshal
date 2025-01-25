@@ -1,3 +1,5 @@
+use std::io::BufReader;
+
 use num_traits::FromPrimitive;
 use python_marshal::Kind;
 
@@ -30,8 +32,10 @@ fn test_recompile_standard_lib() {
         for pyc_file in pyc_files {
             delete_debug_files();
             println!("Testing pyc file: {:?}", pyc_file);
-            let mut file = std::fs::File::open(&pyc_file).expect("Failed to open pyc file");
-            let code = python_marshal::load_pyc(&mut file).expect("Failed to read pyc file");
+            let file = std::fs::File::open(&pyc_file).expect("Failed to open pyc file");
+            let mut reader = BufReader::new(file);
+            
+            let code = python_marshal::load_pyc(&mut reader).expect("Failed to read pyc file");
             let original = std::fs::read(&pyc_file).expect("Failed to read pyc file");
 
             let mut dumped = Vec::new();

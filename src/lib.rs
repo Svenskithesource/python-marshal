@@ -128,7 +128,7 @@ impl Code310 {
         name: Arc<Object>,
         firstlineno: u32,
         lnotab: Arc<Object>,
-        references: &HashMap<usize, Arc<Object>>,
+        references: &HashMap<usize, Object>,
     ) -> Result<Self, Error> {
         // Ensure all corresponding values are of the correct type
         extract_object!(Some(resolve_object_ref!(Some((*code).clone()), references)?), Object::Bytes(bytes) => bytes, Error::NullInTuple)?;
@@ -254,12 +254,12 @@ pub enum ObjectHashable {
 }
 
 impl ObjectHashable {
-    pub fn from_ref(obj: Object, references: &HashMap<usize, Arc<Object>>) -> Result<Self, Error> {
+    pub fn from_ref(obj: Object, references: &HashMap<usize, Object>) -> Result<Self, Error> {
         // If the object is a reference, resolve it and make sure it's hashable
         match obj {
             Object::LoadRef(index) | Object::StoreRef(index) => {
                 if let Some(resolved_obj) = references.get(&index) {
-                    let resolved_obj = resolved_obj.as_ref().clone();
+                    let resolved_obj = resolved_obj.clone();
                     Self::from_ref(resolved_obj.clone(), references)?;
                     match obj {
                         Object::LoadRef(index) => Ok(Self::LoadRef(index)),
@@ -349,13 +349,13 @@ pub struct PycFile {
     pub timestamp: Option<u32>, // Only present in Python 3.7 and later
     pub hash: u64,
     pub object: Object,
-    pub references: HashMap<usize, Arc<Object>>,
+    pub references: HashMap<usize, Object>,
 }
 
 pub fn load_bytes(
     data: &[u8],
     python_version: PyVersion,
-) -> Result<(Object, HashMap<usize, Arc<Object>>), Error> {
+) -> Result<(Object, HashMap<usize, Object>), Error> {
     if python_version < (3, 0) {
         return Err(Error::UnsupportedPyVersion(python_version));
     }
@@ -416,7 +416,7 @@ pub fn dump_pyc(writer: &mut impl Write, pyc_file: PycFile) -> Result<(), Error>
 
 pub fn dump_bytes(
     obj: Object,
-    references: Option<HashMap<usize, Arc<Object>>>,
+    references: Option<HashMap<usize, Object>>,
     python_version: PyVersion,
     marshal_version: u8,
 ) -> Result<Vec<u8>, Error> {
