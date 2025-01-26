@@ -131,7 +131,7 @@ impl PyWriter {
                 );
             }
             Some(Object::Long(num)) => {
-                let num = (*num).clone();
+                let num = num.clone();
                 if num >= BigInt::from(i32::MIN) && num <= BigInt::from(i32::MAX) {
                     self.w_kind(Kind::Int, is_ref);
                     self.w_long(num.to_i32().unwrap());
@@ -163,7 +163,7 @@ impl PyWriter {
             Some(Object::Bytes(value)) => {
                 self.w_kind(Kind::String, is_ref);
                 self.w_long(value.len() as i32);
-                self.w_bytes(&*value);
+                self.w_bytes(&value);
             }
             Some(Object::String(value)) => {
                 let str_value = &*&value.value;
@@ -216,8 +216,8 @@ impl PyWriter {
             Some(Object::Dict(value)) => {
                 self.w_kind(Kind::Dict, is_ref);
                 for (key, value) in value.iter() {
-                    self.w_object(Some(key.clone().into()));
-                    self.w_object(Some((*value.clone()).clone()));
+                    self.w_object(Some((*key).clone().into()));
+                    self.w_object(Some((**value).clone()).into());
                 }
 
                 self.w_kind(Kind::Null, is_ref); // NULL object terminated
@@ -229,7 +229,7 @@ impl PyWriter {
                 self.w_long(size as i32);
 
                 for item in value.iter() {
-                    self.w_object(Some(item.clone().into()));
+                    self.w_object(Some((*item).clone().into()));
                 }
             }
             Some(Object::FrozenSet(value)) => {
@@ -239,13 +239,13 @@ impl PyWriter {
                 self.w_long(size as i32);
 
                 for item in value.iter() {
-                    self.w_object(Some(item.clone().into()));
+                    self.w_object(Some((*item).clone().into()));
                 }
             }
             Some(Object::Code(value)) => {
-                let value = &*value;
+                let value = value;
 
-                match value {
+                match *value {
                     Code::V310(value) => {
                         self.w_kind(Kind::Code, is_ref);
                         self.w_long(value.argcount.try_into().unwrap());

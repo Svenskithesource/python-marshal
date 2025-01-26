@@ -101,16 +101,16 @@ pub struct Code310 {
     pub nlocals:         u32,
     pub stacksize:       u32,
     pub flags:           CodeFlags,
-    pub code:            Arc<Object>, // Needs to contain Vec<u8> as a value or a reference
-    pub consts:          Arc<Object>, // Needs to contain Vec<Object> as a value or a reference
-    pub names:           Arc<Object>, // Needs to contain Vec<Arc<PyString>> as a value or a reference
-    pub varnames:        Arc<Object>, // Needs to contain Vec<Arc<PyString>> as a value or a reference
-    pub freevars:        Arc<Object>, // Needs to contain Vec<Arc<PyString>> as a value or a reference
-    pub cellvars:        Arc<Object>, // Needs to contain Vec<Arc<PyString>> as a value or a reference
-    pub filename:        Arc<Object>, // Needs to contain Arc<PyString> as a value or a reference
-    pub name:            Arc<Object>, // Needs to contain Arc<PyString> as a value or a reference
+    pub code:            Box<Object>, // Needs to contain Vec<u8> as a value or a reference
+    pub consts:          Box<Object>, // Needs to contain Vec<Object> as a value or a reference
+    pub names:           Box<Object>, // Needs to contain Vec<PyString> as a value or a reference
+    pub varnames:        Box<Object>, // Needs to contain Vec<PyString> as a value or a reference
+    pub freevars:        Box<Object>, // Needs to contain Vec<PyString> as a value or a reference
+    pub cellvars:        Box<Object>, // Needs to contain Vec<PyString> as a value or a reference
+    pub filename:        Box<Object>, // Needs to contain PyString> as a value or a reference
+    pub name:            Box<Object>, // Needs to contain PyString as a value or a reference
     pub firstlineno:     u32,
-    pub lnotab:          Arc<Object>, // Needs to contain Arc<Vec<u8>>, as a value or a reference
+    pub lnotab:          Box<Object>, // Needs to contain Vec<u8>, as a value or a reference
 }
 
 impl Code310 {
@@ -121,16 +121,16 @@ impl Code310 {
         nlocals: u32,
         stacksize: u32,
         flags: CodeFlags,
-        code: Arc<Object>,
-        consts: Arc<Object>,
-        names: Arc<Object>,
-        varnames: Arc<Object>,
-        freevars: Arc<Object>,
-        cellvars: Arc<Object>,
-        filename: Arc<Object>,
-        name: Arc<Object>,
+        code: Box<Object>,
+        consts: Box<Object>,
+        names: Box<Object>,
+        varnames: Box<Object>,
+        freevars: Box<Object>,
+        cellvars: Box<Object>,
+        filename: Box<Object>,
+        name: Box<Object>,
         firstlineno: u32,
-        lnotab: Arc<Object>,
+        lnotab: Box<Object>,
         references: &Vec<Object>,
     ) -> Result<Self, Error> {
         // Ensure all corresponding values are of the correct type
@@ -221,17 +221,17 @@ pub enum Object {
     StopIteration,
     Ellipsis,
     Bool      (bool),
-    Long      (Arc<BigInt>),
+    Long      (BigInt),
     Float     (f64),
     Complex   (Complex<f64>),
-    Bytes     (Arc<Vec<u8>>),
-    String    (Arc<PyString>),
-    Tuple     (Arc<Vec<Arc<Object>>>),
-    List      (Arc<Vec<Arc<Object>>>),
-    Dict      (Arc<IndexMap<ObjectHashable, Arc<Object>>>),
-    Set       (Arc<IndexSet<ObjectHashable>>),
-    FrozenSet (Arc<IndexSet<ObjectHashable>>),
-    Code      (Arc<Code>),
+    Bytes     (Vec<u8>),
+    String    (PyString),
+    Tuple     (Vec<Box<Object>>),
+    List      (Vec<Box<Object>>),
+    Dict      (IndexMap<ObjectHashable, Box<Object>>),
+    Set       (IndexSet<ObjectHashable>),
+    FrozenSet (IndexSet<ObjectHashable>),
+    Code      (Box<Code>),
     LoadRef   (usize),
     StoreRef  (usize),
 }
@@ -245,13 +245,13 @@ pub enum ObjectHashable {
     StopIteration,
     Ellipsis,
     Bool      (bool),
-    Long      (Arc<BigInt>),
+    Long      (BigInt),
     Float     (OrderedFloat<f64>),
     Complex   (Complex<OrderedFloat<f64>>),
-    Bytes     (Arc<Vec<u8>>),
-    String    (Arc<PyString>),
-    Tuple     (Arc<Vec<ObjectHashable>>),
-    FrozenSet (Arc<HashableHashSet<ObjectHashable>>),
+    Bytes     (Vec<u8>),
+    String    (PyString),
+    Tuple     (Vec<ObjectHashable>),
+    FrozenSet (HashableHashSet<ObjectHashable>),
     LoadRef   (usize), // You need to ensure that the reference is hashable
     StoreRef  (usize), // Same as above
 }
@@ -277,8 +277,7 @@ impl ObjectHashable {
                 // Tuple can contain references
                 t.iter()
                     .map(|o| Self::from_ref((**o).clone(), references).unwrap())
-                    .collect::<Vec<_>>()
-                    .into(),
+                    .collect::<Vec<_>>(),
             )),
             _ => Self::try_from(obj),
         }
@@ -309,7 +308,9 @@ impl TryFrom<Object> for ObjectHashable {
                     .into(),
             )),
             Object::FrozenSet(s) => Ok(ObjectHashable::FrozenSet(
-                s.iter().cloned().collect::<HashableHashSet<_>>().into(),
+                s.iter()
+                    .map(|o| (*o).clone())
+                    .collect::<HashableHashSet<_>>(),
             )),
             _ => Err(Error::InvalidObject(obj)),
         }
@@ -333,12 +334,12 @@ impl From<ObjectHashable> for Object {
             ObjectHashable::String(s) => Object::String(s),
             ObjectHashable::Tuple(t) => Object::Tuple(
                 t.iter()
-                    .map(|o| Arc::new(Object::from(o.clone())))
+                    .map(|o| Box::new(Object::from((*o).clone())))
                     .collect::<Vec<_>>()
                     .into(),
             ),
             ObjectHashable::FrozenSet(s) => {
-                Object::FrozenSet(s.iter().cloned().collect::<IndexSet<_>>().into())
+                Object::FrozenSet(s.iter().cloned().collect::<IndexSet<_>>())
             }
             ObjectHashable::LoadRef(index) => Object::LoadRef(index),
             ObjectHashable::StoreRef(index) => Object::StoreRef(index),
@@ -505,7 +506,7 @@ mod tests {
         assert_eq!(
             extract_object!(Some(kind), Object::Bytes(bytes) => bytes, Error::UnexpectedObject)
                 .unwrap(),
-            "test".as_bytes().to_vec().into()
+            "test".as_bytes().to_vec()
         );
     }
 
@@ -618,10 +619,7 @@ mod tests {
             )
         );
 
-        assert_eq!(
-            *refs.get(1).unwrap(),
-            Object::Long(Arc::new(BigInt::from(1))).into()
-        );
+        assert_eq!(*refs.get(1).unwrap(), Object::Long(BigInt::from(1)).into());
     }
 
     #[test]
@@ -673,7 +671,7 @@ mod tests {
                     .unwrap()
             )
             .unwrap(),
-            HashSet::new()
+            HashSet::new().into()
         );
 
         // Set with two elements {"a", "b"}
@@ -732,10 +730,10 @@ mod tests {
         let data = b"\xe3\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x03\x00\x00\x00C\x00\x00\x00s\x0e\x00\x00\x00t\x00|\x00|\x01\x83\x02\x01\x00d\x00S\x00\xa9\x01N)\x01\xda\x05print)\x02Z\x04arg1Z\x04arg2\xa9\x00r\x03\x00\x00\x00\xfa\x07<stdin>\xda\x01f\x01\x00\x00\x00s\x02\x00\x00\x00\x0e\x00";
         let (kind, refs) = load_bytes(data, (3, 10).into()).unwrap();
 
-        let code = (*extract_object!(Some(resolve_object_ref!(Some(kind), refs).unwrap()), Object::Code(code) => code, Error::UnexpectedObject)
-                .unwrap()).clone();
+        let code = extract_object!(Some(resolve_object_ref!(Some(kind), refs).unwrap()), Object::Code(code) => code, Error::UnexpectedObject)
+                .unwrap().clone();
 
-        match code {
+        match *code {
             Code::V310(code) => {
                 let inner_code = extract_object!(Some(resolve_object_ref!(Some((*code.code).clone()), &refs).unwrap()), Object::Bytes(bytes) => bytes, Error::NullInTuple).unwrap();
                 let inner_consts = extract_object!(Some(resolve_object_ref!(Some((*code.consts).clone()), &refs).unwrap()), Object::Tuple(objs) => objs, Error::NullInTuple).unwrap();
@@ -898,21 +896,18 @@ mod tests {
         // Dict with two elements {"a": "b", "c": "d"}
         let data1 = b"{z\x01az\x01bz\x01cz\x01d0";
         let data2 = b"{z\x01cz\x01dz\x01az\x01b0"; // Order is not guaranteed
-        let object = Object::Dict(
-            {
-                let mut map = IndexMap::new();
-                map.insert(
-                    ObjectHashable::String(PyString::from("a".to_string()).into()),
-                    Object::String(PyString::from("b".to_string()).into()).into(),
-                );
-                map.insert(
-                    ObjectHashable::String(PyString::from("c".to_string()).into()),
-                    Object::String(PyString::from("d".to_string()).into()).into(),
-                );
-                map
-            }
-            .into(),
-        );
+        let object = Object::Dict({
+            let mut map = IndexMap::new();
+            map.insert(
+                ObjectHashable::String(PyString::from("a".to_string()).into()).into(),
+                Object::String(PyString::from("b".to_string()).into()).into(),
+            );
+            map.insert(
+                ObjectHashable::String(PyString::from("c".to_string()).into()).into(),
+                Object::String(PyString::from("d".to_string()).into()).into(),
+            );
+            map
+        });
         let dumped = dump_bytes(object, None, (3, 10).into(), 4).unwrap();
         assert!(data1.to_vec() == dumped || data2.to_vec() == dumped);
     }
@@ -928,19 +923,12 @@ mod tests {
         // Set with two elements {"a", "b"}
         let data1 = b"<\x02\x00\x00\x00z\x01az\x01b";
         let data2 = b"<\x02\x00\x00\x00z\x01bz\x01a"; // Order is not guaranteed
-        let object = Object::Set(
-            {
-                let mut set = IndexSet::new();
-                set.insert(ObjectHashable::String(
-                    PyString::from("a".to_string()).into(),
-                ));
-                set.insert(ObjectHashable::String(
-                    PyString::from("b".to_string()).into(),
-                ));
-                set
-            }
-            .into(),
-        );
+        let object = Object::Set({
+            let mut set = IndexSet::new();
+            set.insert(ObjectHashable::String(PyString::from("a".to_string()).into()).into());
+            set.insert(ObjectHashable::String(PyString::from("b".to_string()).into()).into());
+            set
+        });
         let dumped = dump_bytes(object, None, (3, 10).into(), 4).unwrap();
         assert!(data1.to_vec() == dumped || data2.to_vec() == dumped);
     }
@@ -956,19 +944,12 @@ mod tests {
         // Frozenset with two elements {"a", "b"}
         let data1 = b">\x02\x00\x00\x00z\x01az\x01b"; // Order is not guaranteed
         let data2 = b">\x02\x00\x00\x00z\x01bz\x01a";
-        let object = Object::FrozenSet(
-            {
-                let mut set = IndexSet::new();
-                set.insert(ObjectHashable::String(
-                    PyString::from("a".to_string()).into(),
-                ));
-                set.insert(ObjectHashable::String(
-                    PyString::from("b".to_string()).into(),
-                ));
-                set
-            }
-            .into(),
-        );
+        let object = Object::FrozenSet({
+            let mut set = IndexSet::new();
+            set.insert(ObjectHashable::String(PyString::from("a".to_string()).into()).into());
+            set.insert(ObjectHashable::String(PyString::from("b".to_string()).into()).into());
+            set
+        });
         let dumped = dump_bytes(object, None, (3, 10).into(), 4).unwrap();
         assert!(data1.to_vec() == dumped || data2.to_vec() == dumped || data2.to_vec() == dumped);
     }
@@ -1010,7 +991,7 @@ mod tests {
             firstlineno: 1,
             lnotab: Object::Bytes([14, 0].to_vec().into()).into(),
         });
-        let dumped = dump_bytes(Object::Code(Arc::new(object)), None, (3, 10).into(), 4).unwrap();
+        let dumped = dump_bytes(Object::Code(object.into()), None, (3, 10).into(), 4).unwrap();
 
         assert_eq!(data.to_vec(), dumped);
     }
@@ -1032,6 +1013,8 @@ mod tests {
 
         let (kind, refs) = optimize_references(kind, refs);
 
+        dbg!(dump_bytes(kind.clone(), Some(refs.clone()), (3, 10).into(), 4).unwrap());
+
         assert_eq!(
             kind,
             Object::List(
@@ -1044,9 +1027,6 @@ mod tests {
             )
         );
 
-        assert_eq!(
-            *refs.get(0).unwrap(),
-            Object::Long(Arc::new(BigInt::from(1))).into()
-        );
+        assert_eq!(*refs.get(0).unwrap(), Object::Long(BigInt::from(1)).into());
     }
 }

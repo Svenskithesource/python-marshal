@@ -3,6 +3,7 @@ use std::{
     sync::Arc,
 };
 
+use hashable::HashableHashSet;
 use indexmap::set::MutableValues;
 
 use crate::{Code, Object, ObjectHashable};
@@ -238,18 +239,17 @@ impl Transformer for ReferenceOptimizer {
 
     fn visit_Code(&mut self, obj: &mut Object) -> Option<Object> {
         if let Object::Code(code) = obj {
-            let code = Arc::get_mut(code).unwrap();
-            match code {
+            match **code {
                 Code::V310(ref mut code) => {
-                    Arc::get_mut(&mut code.code).unwrap().transform(self);
-                    Arc::get_mut(&mut code.consts).unwrap().transform(self);
-                    Arc::get_mut(&mut code.names).unwrap().transform(self);
-                    Arc::get_mut(&mut code.varnames).unwrap().transform(self);
-                    Arc::get_mut(&mut code.freevars).unwrap().transform(self);
-                    Arc::get_mut(&mut code.cellvars).unwrap().transform(self);
-                    Arc::get_mut(&mut code.filename).unwrap().transform(self);
-                    Arc::get_mut(&mut code.name).unwrap().transform(self);
-                    Arc::get_mut(&mut code.lnotab).unwrap().transform(self);
+                    code.code.transform(self);
+                    code.consts.transform(self);
+                    code.names.transform(self);
+                    code.varnames.transform(self);
+                    code.freevars.transform(self);
+                    code.cellvars.transform(self);
+                    code.filename.transform(self);
+                    code.name.transform(self);
+                    code.lnotab.transform(self);
                 }
             }
         }
@@ -259,8 +259,8 @@ impl Transformer for ReferenceOptimizer {
 
     fn visit_Dict(&mut self, obj: &mut Object) -> Option<Object> {
         if let Object::Dict(dict) = obj {
-            for (_, value) in Arc::get_mut(dict).unwrap().iter_mut() {
-                Arc::get_mut(value).unwrap().transform(self);
+            for (_, value) in dict.iter_mut() {
+                value.transform(self);
             }
         }
 
@@ -270,7 +270,7 @@ impl Transformer for ReferenceOptimizer {
     fn visit_FrozenSet(&mut self, obj: &mut Object) -> Option<Object> {
         if let Object::FrozenSet(set) = obj {
             for i in 0..set.len() {
-                let obj = Arc::get_mut(set).unwrap().get_index_mut2(i).unwrap();
+                let obj = set.get_index_mut2(i).unwrap();
                 obj.transform(self);
             }
         }
@@ -280,8 +280,7 @@ impl Transformer for ReferenceOptimizer {
 
     fn visit_Tuple(&mut self, obj: &mut Object) -> Option<Object> {
         if let Object::Tuple(tuple) = obj {
-            for obj in Arc::get_mut(tuple).unwrap() {
-                let obj = Arc::get_mut(obj).unwrap();
+            for obj in tuple {
                 obj.transform(self);
             }
         }
@@ -292,7 +291,7 @@ impl Transformer for ReferenceOptimizer {
     fn visit_Set(&mut self, obj: &mut Object) -> Option<Object> {
         if let Object::Set(set) = obj {
             for i in 0..set.len() {
-                let obj = Arc::get_mut(set).unwrap().get_index_mut2(i).unwrap();
+                let obj = set.get_index_mut2(i).unwrap();
                 obj.transform(self);
             }
         }
@@ -302,8 +301,7 @@ impl Transformer for ReferenceOptimizer {
 
     fn visit_List(&mut self, obj: &mut Object) -> Option<Object> {
         if let Object::List(list) = obj {
-            for obj in Arc::get_mut(list).unwrap().iter_mut() {
-                let obj = Arc::get_mut(obj).unwrap();
+            for obj in list.iter_mut() {
                 obj.transform(self);
             }
         }
@@ -313,7 +311,6 @@ impl Transformer for ReferenceOptimizer {
 
     fn visit_HashableTuple(&mut self, obj: &mut ObjectHashable) -> Option<ObjectHashable> {
         if let ObjectHashable::Tuple(tuple) = obj {
-            let tuple = Arc::get_mut(tuple).unwrap();
             for obj in tuple.iter_mut() {
                 obj.transform(self);
             }
@@ -324,12 +321,17 @@ impl Transformer for ReferenceOptimizer {
 
     fn visit_HashableFrozenSet(&mut self, obj: &mut ObjectHashable) -> Option<ObjectHashable> {
         if let ObjectHashable::FrozenSet(set) = obj {
-            for mut obj in Arc::make_mut(set).drain() {
+            let mut new_set = HashableHashSet::new();
+            for obj in set.iter() {
+                let mut obj = obj.clone();
                 obj.transform(self);
+                new_set.insert(obj);
             }
-        }
 
-        None
+            Some(ObjectHashable::FrozenSet(new_set))
+        } else {
+            None
+        }
     }
 }
 
@@ -388,18 +390,17 @@ impl Transformer for ReferenceCounter {
 
     fn visit_Code(&mut self, obj: &mut Object) -> Option<Object> {
         if let Object::Code(code) = obj {
-            let code = Arc::get_mut(code).unwrap();
-            match code {
+            match **code {
                 Code::V310(ref mut code) => {
-                    Arc::get_mut(&mut code.code).unwrap().transform(self);
-                    Arc::get_mut(&mut code.consts).unwrap().transform(self);
-                    Arc::get_mut(&mut code.names).unwrap().transform(self);
-                    Arc::get_mut(&mut code.varnames).unwrap().transform(self);
-                    Arc::get_mut(&mut code.freevars).unwrap().transform(self);
-                    Arc::get_mut(&mut code.cellvars).unwrap().transform(self);
-                    Arc::get_mut(&mut code.filename).unwrap().transform(self);
-                    Arc::get_mut(&mut code.name).unwrap().transform(self);
-                    Arc::get_mut(&mut code.lnotab).unwrap().transform(self);
+                    code.code.transform(self);
+                    code.consts.transform(self);
+                    code.names.transform(self);
+                    code.varnames.transform(self);
+                    code.freevars.transform(self);
+                    code.cellvars.transform(self);
+                    code.filename.transform(self);
+                    code.name.transform(self);
+                    code.lnotab.transform(self);
                 }
             }
         }
@@ -409,8 +410,8 @@ impl Transformer for ReferenceCounter {
 
     fn visit_Dict(&mut self, obj: &mut Object) -> Option<Object> {
         if let Object::Dict(dict) = obj {
-            for (_, value) in Arc::get_mut(dict).unwrap().iter_mut() {
-                Arc::get_mut(value).unwrap().transform(self);
+            for (_, value) in dict.iter_mut() {
+                value.transform(self);
             }
         }
 
@@ -420,7 +421,7 @@ impl Transformer for ReferenceCounter {
     fn visit_FrozenSet(&mut self, obj: &mut Object) -> Option<Object> {
         if let Object::FrozenSet(set) = obj {
             for i in 0..set.len() {
-                let obj = Arc::get_mut(set).unwrap().get_index_mut2(i).unwrap();
+                let obj = set.get_index_mut2(i).unwrap();
                 obj.transform(self);
             }
         }
@@ -430,8 +431,7 @@ impl Transformer for ReferenceCounter {
 
     fn visit_Tuple(&mut self, obj: &mut Object) -> Option<Object> {
         if let Object::Tuple(tuple) = obj {
-            for obj in Arc::get_mut(tuple).unwrap() {
-                let obj = Arc::get_mut(obj).unwrap();
+            for obj in tuple {
                 obj.transform(self);
             }
         }
@@ -442,7 +442,7 @@ impl Transformer for ReferenceCounter {
     fn visit_Set(&mut self, obj: &mut Object) -> Option<Object> {
         if let Object::Set(set) = obj {
             for i in 0..set.len() {
-                let obj = Arc::get_mut(set).unwrap().get_index_mut2(i).unwrap();
+                let obj = set.get_index_mut2(i).unwrap();
                 obj.transform(self);
             }
         }
@@ -463,7 +463,7 @@ impl Transformer for ReferenceCounter {
 
     fn visit_HashableTuple(&mut self, obj: &mut ObjectHashable) -> Option<ObjectHashable> {
         if let ObjectHashable::Tuple(tuple) = obj {
-            for obj in Arc::get_mut(tuple).unwrap() {
+            for obj in tuple.iter_mut() {
                 obj.transform(self);
             }
         }

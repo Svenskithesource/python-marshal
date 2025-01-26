@@ -185,7 +185,7 @@ impl PyReader {
         Ok(value)
     }
 
-    fn r_vec(&mut self, length: usize, kind: Kind) -> Result<Vec<Arc<Object>>, Error> {
+    fn r_vec(&mut self, length: usize, kind: Kind) -> Result<Vec<Box<Object>>, Error> {
         let mut vec = Vec::with_capacity(length);
 
         for _ in 0..length {
@@ -206,7 +206,7 @@ impl PyReader {
         Ok(vec)
     }
 
-    fn r_hashmap(&mut self) -> Result<IndexMap<ObjectHashable, Object>, Error> {
+    fn r_hashmap(&mut self) -> Result<IndexMap<ObjectHashable, Box<Object>>, Error> {
         let mut map = IndexMap::new();
 
         loop {
@@ -215,7 +215,7 @@ impl PyReader {
                 Some(key) => match self.r_object()? {
                     None => break,
                     Some(value) => {
-                        map.insert(ObjectHashable::try_from(key)?, value);
+                        map.insert(ObjectHashable::try_from(key)?, value.into());
                     }
                 },
             }
@@ -333,19 +333,15 @@ impl PyReader {
             }
             Kind::ASCIIInterned | Kind::ASCII | Kind::Interned | Kind::Unicode => {
                 let length = self.r_long()?;
-                let value = Object::String(Arc::new(PyString::new(
-                    self.r_string(length as usize)?,
-                    obj_kind,
-                )));
+                let value =
+                    Object::String(PyString::new(self.r_string(length as usize)?, obj_kind));
 
                 Some(value)
             }
             Kind::ShortAsciiInterned | Kind::ShortAscii => {
                 let length = self.r_u8()?;
-                let value = Object::String(Arc::new(PyString::new(
-                    self.r_string(length as usize)?,
-                    obj_kind,
-                )));
+                let value =
+                    Object::String(PyString::new(self.r_string(length as usize)?, obj_kind));
 
                 Some(value)
             }
@@ -374,13 +370,7 @@ impl PyReader {
                 Some(value)
             }
             Kind::Dict => {
-                let value = Object::Dict(
-                    self.r_hashmap()?
-                        .into_iter()
-                        .map(|(k, v)| (k, v.into()))
-                        .collect::<IndexMap<_, _>>()
-                        .into(),
-                );
+                let value = Object::Dict(self.r_hashmap()?.into_iter().collect::<IndexMap<_, _>>());
 
                 Some(value)
             }
@@ -395,15 +385,16 @@ impl PyReader {
                             Err(_) => Err(Error::UnexpectedObject),
                         },
                     )
-                    .collect::<Result<IndexSet<_>, _>>()?
-                    .into();
+                    .collect::<Result<IndexSet<_>, _>>()?;
+
+                let value = Object::Set(value);
 
                 if flag {
                     idx = Some(self.references.len());
-                    self.set_reference(idx.unwrap(), Object::Set(Arc::clone(&value)).into());
+                    self.set_reference(idx.unwrap(), value.clone());
                 }
 
-                Some(Object::Set(value))
+                Some(value)
             }
             Kind::FrozenSet => {
                 let length = self.r_long()?;
@@ -416,8 +407,7 @@ impl PyReader {
                                 Err(_) => Err(Error::UnexpectedObject),
                             },
                         )
-                        .collect::<Result<IndexSet<_>, _>>()?
-                        .into(),
+                        .collect::<Result<IndexSet<_>, _>>()?,
                 )
                 .into();
 
