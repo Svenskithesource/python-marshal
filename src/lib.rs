@@ -1,21 +1,24 @@
 mod error;
 pub mod magic;
+mod optimizer;
 mod reader;
+mod walker;
 mod writer;
 
 use bitflags::bitflags;
 use bstr::BString;
 use error::Error;
 use hashable::HashableHashSet;
-use indexmap::{IndexMap, IndexSet};
+use indexmap::{set::MutableValues, IndexMap, IndexSet};
 use magic::PyVersion;
 use num_bigint::BigInt;
 use num_complex::Complex;
 use num_derive::{FromPrimitive, ToPrimitive};
+use optimizer::{get_used_references, ReferenceOptimizer};
 use ordered_float::OrderedFloat;
 use reader::PyReader;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     io::{Read, Write},
     sync::Arc,
 };
@@ -128,7 +131,7 @@ impl Code310 {
         name: Arc<Object>,
         firstlineno: u32,
         lnotab: Arc<Object>,
-        references: &HashMap<usize, Object>,
+        references: &Vec<Object>,
     ) -> Result<Self, Error> {
         // Ensure all corresponding values are of the correct type
         extract_object!(Some(resolve_object_ref!(Some((*code).clone()), references)?), Object::Bytes(bytes) => bytes, Error::NullInTuple)?;
@@ -223,7 +226,7 @@ pub enum Object {
     Complex   (Complex<f64>),
     Bytes     (Arc<Vec<u8>>),
     String    (Arc<PyString>),
-    Tuple     (Arc<Vec<Object>>),
+    Tuple     (Arc<Vec<Arc<Object>>>),
     List      (Arc<Vec<Arc<Object>>>),
     Dict      (Arc<IndexMap<ObjectHashable, Arc<Object>>>),
     Set       (Arc<IndexSet<ObjectHashable>>),
@@ -254,11 +257,11 @@ pub enum ObjectHashable {
 }
 
 impl ObjectHashable {
-    pub fn from_ref(obj: Object, references: &HashMap<usize, Object>) -> Result<Self, Error> {
+    pub fn from_ref(obj: Object, references: &Vec<Object>) -> Result<Self, Error> {
         // If the object is a reference, resolve it and make sure it's hashable
         match obj {
             Object::LoadRef(index) | Object::StoreRef(index) => {
-                if let Some(resolved_obj) = references.get(&index) {
+                if let Some(resolved_obj) = references.get(index) {
                     let resolved_obj = resolved_obj.clone();
                     Self::from_ref(resolved_obj.clone(), references)?;
                     match obj {
@@ -273,7 +276,7 @@ impl ObjectHashable {
             Object::Tuple(t) => Ok(Self::Tuple(
                 // Tuple can contain references
                 t.iter()
-                    .map(|o| Self::from_ref(o.clone(), references).unwrap())
+                    .map(|o| Self::from_ref((**o).clone(), references).unwrap())
                     .collect::<Vec<_>>()
                     .into(),
             )),
@@ -301,7 +304,7 @@ impl TryFrom<Object> for ObjectHashable {
             Object::String(s) => Ok(ObjectHashable::String(s)),
             Object::Tuple(t) => Ok(ObjectHashable::Tuple(
                 t.iter()
-                    .map(|o| ObjectHashable::try_from(o.clone()).unwrap())
+                    .map(|o| ObjectHashable::try_from((**o).clone()).unwrap())
                     .collect::<Vec<_>>()
                     .into(),
             )),
@@ -330,7 +333,7 @@ impl From<ObjectHashable> for Object {
             ObjectHashable::String(s) => Object::String(s),
             ObjectHashable::Tuple(t) => Object::Tuple(
                 t.iter()
-                    .map(|o| Object::from(o.clone()))
+                    .map(|o| Arc::new(Object::from(o.clone())))
                     .collect::<Vec<_>>()
                     .into(),
             ),
@@ -349,13 +352,23 @@ pub struct PycFile {
     pub timestamp: Option<u32>, // Only present in Python 3.7 and later
     pub hash: u64,
     pub object: Object,
-    pub references: HashMap<usize, Object>,
+    pub references: Vec<Object>,
 }
 
-pub fn load_bytes(
-    data: &[u8],
-    python_version: PyVersion,
-) -> Result<(Object, HashMap<usize, Object>), Error> {
+pub fn optimize_references(object: Object, references: Vec<Object>) -> (Object, Vec<Object>) {
+    // Remove all unused references
+    let mut object = object;
+
+    let usage_counter = get_used_references(&mut object, references.clone());
+
+    let mut optimizer = ReferenceOptimizer::new(references, usage_counter);
+
+    object.transform(&mut optimizer);
+
+    (object, optimizer.references)
+}
+
+pub fn load_bytes(data: &[u8], python_version: PyVersion) -> Result<(Object, Vec<Object>), Error> {
     if python_version < (3, 0) {
         return Err(Error::UnsupportedPyVersion(python_version));
     }
@@ -416,7 +429,7 @@ pub fn dump_pyc(writer: &mut impl Write, pyc_file: PycFile) -> Result<(), Error>
 
 pub fn dump_bytes(
     obj: Object,
-    references: Option<HashMap<usize, Object>>,
+    references: Option<Vec<Object>>,
     python_version: PyVersion,
     marshal_version: u8,
 ) -> Result<Vec<u8>, Error> {
@@ -424,7 +437,7 @@ pub fn dump_bytes(
         return Err(Error::UnsupportedPyVersion(python_version));
     }
 
-    let mut py_writer = PyWriter::new(references.unwrap_or(HashMap::new()), marshal_version);
+    let mut py_writer = PyWriter::new(references.unwrap_or(Vec::new()), marshal_version);
 
     Ok(py_writer.write_object(Some(obj)))
 }
@@ -606,7 +619,7 @@ mod tests {
         );
 
         assert_eq!(
-            *refs.get(&1).unwrap(),
+            *refs.get(1).unwrap(),
             Object::Long(Arc::new(BigInt::from(1))).into()
         );
     }
@@ -843,8 +856,8 @@ mod tests {
         let data = b")\x02z\x01az\x01b";
         let object = Object::Tuple(
             vec![
-                Object::String(PyString::from("a".to_string()).into()),
-                Object::String(PyString::from("b".to_string()).into()),
+                Object::String(PyString::from("a".to_string()).into()).into(),
+                Object::String(PyString::from("b".to_string()).into()).into(),
             ]
             .into(),
         );
@@ -869,6 +882,7 @@ mod tests {
             ]
             .into(),
         );
+        dbg!(&object);
         let dumped = dump_bytes(object, None, (3, 10).into(), 4).unwrap();
         assert_eq!(data.to_vec(), dumped);
     }
@@ -973,9 +987,9 @@ mod tests {
             flags: CodeFlags::from_bits_truncate(0x43),
             code: Object::Bytes(vec![116, 0, 124, 0, 124, 1, 131, 2, 1, 0, 100, 0, 83, 0].into())
                 .into(),
-            consts: Object::Tuple([Object::None].to_vec().into()).into(),
+            consts: Object::Tuple([Object::None.into()].to_vec().into()).into(),
             names: Object::Tuple(
-                [Object::String(PyString::from("print".to_string()).into())]
+                [Object::String(PyString::from("print".to_string()).into()).into()]
                     .to_vec()
                     .into(),
             )
@@ -1009,5 +1023,30 @@ mod tests {
         let dumped = dump_bytes(kind, Some(refs), (3, 10).into(), 4).unwrap();
 
         assert_eq!(data.to_vec(), dumped);
+    }
+
+    #[test]
+    fn test_optimize_references() {
+        let data = b"\xdb\x03\x00\x00\x00\xe9\x01\x00\x00\x00r\x01\x00\x00\x00r\x01\x00\x00\x00";
+        let (kind, refs) = load_bytes(data, (3, 10).into()).unwrap();
+
+        let (kind, refs) = optimize_references(kind, refs);
+
+        assert_eq!(
+            kind,
+            Object::List(
+                vec![
+                    Object::StoreRef(0).into(),
+                    Object::LoadRef(0).into(),
+                    Object::LoadRef(0).into()
+                ]
+                .into()
+            )
+        );
+
+        assert_eq!(
+            *refs.get(0).unwrap(),
+            Object::Long(Arc::new(BigInt::from(1))).into()
+        );
     }
 }

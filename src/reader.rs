@@ -19,7 +19,7 @@ use crate::{
 
 pub struct PyReader {
     cursor: Cursor<Vec<u8>>,
-    pub references: HashMap<usize, Object>,
+    pub references: Vec<Object>,
     version: PyVersion,
 }
 
@@ -43,7 +43,7 @@ macro_rules! resolve_object_ref {
         match $self.ok_or_else(|| crate::error::Error::UnexpectedNull) {
             Ok(val) => match val {
                 Object::LoadRef(index) | Object::StoreRef(index) => {
-                    let reference = $refs.get(&index);
+                    let reference = $refs.get(index);
 
                     match reference {
                         Some(obj) => Ok((*obj).clone()),
@@ -62,7 +62,7 @@ macro_rules! extract_strings_tuple {
     ($objs:expr, $refs:expr) => {
         $objs
             .iter()
-            .map(|o| match resolve_object_ref!(Some(o.clone()), $refs)? {
+            .map(|o| match resolve_object_ref!(Some((**o).clone()), $refs)? {
                 Object::String(string) => Ok(string.clone()),
                 _ => Err(Error::UnexpectedObject),
             })
@@ -129,7 +129,7 @@ impl PyReader {
         Self {
             cursor: Cursor::new(data),
             version,
-            references: HashMap::new(),
+            references: Vec::new(),
         }
     }
 
@@ -185,7 +185,7 @@ impl PyReader {
         Ok(value)
     }
 
-    fn r_vec(&mut self, length: usize, kind: Kind) -> Result<Vec<Object>, Error> {
+    fn r_vec(&mut self, length: usize, kind: Kind) -> Result<Vec<Arc<Object>>, Error> {
         let mut vec = Vec::with_capacity(length);
 
         for _ in 0..length {
@@ -200,7 +200,7 @@ impl PyReader {
                 });
             }
 
-            vec.push(obj.unwrap());
+            vec.push(obj.unwrap().into());
         }
 
         Ok(vec)
@@ -225,7 +225,7 @@ impl PyReader {
     }
 
     fn set_reference(&mut self, index: usize, obj: Object) {
-        self.references.insert(index, obj);
+        self.references[index] = obj;
     }
 
     fn r_object(&mut self) -> Result<Option<Object>, Error> {
@@ -247,9 +247,8 @@ impl PyReader {
             | Kind::Code
                 if flag =>
             {
-                let i = self.references.len();
-                self.set_reference(i, Object::None.into());
-                Some(i)
+                self.references.push(Object::None);
+                Some(self.references.len() - 1)
             }
             _ => None,
         };
@@ -390,10 +389,12 @@ impl PyReader {
                 let value = self
                     .r_vec(length as usize, Kind::Set)?
                     .into_iter()
-                    .map(|o| match ObjectHashable::from_ref(o, &self.references) {
-                        Ok(obj) => Ok(obj),
-                        Err(_) => Err(Error::UnexpectedObject),
-                    })
+                    .map(
+                        |o| match ObjectHashable::from_ref((*o).clone(), &self.references) {
+                            Ok(obj) => Ok(obj),
+                            Err(_) => Err(Error::UnexpectedObject),
+                        },
+                    )
                     .collect::<Result<IndexSet<_>, _>>()?
                     .into();
 
@@ -409,10 +410,12 @@ impl PyReader {
                 let value = Object::FrozenSet(
                     self.r_vec(length as usize, Kind::FrozenSet)?
                         .into_iter()
-                        .map(|o| match ObjectHashable::from_ref(o, &self.references) {
-                            Ok(obj) => Ok(obj),
-                            Err(_) => Err(Error::UnexpectedObject),
-                        })
+                        .map(
+                            |o| match ObjectHashable::from_ref((*o).clone(), &self.references) {
+                                Ok(obj) => Ok(obj),
+                                Err(_) => Err(Error::UnexpectedObject),
+                            },
+                        )
                         .collect::<Result<IndexSet<_>, _>>()?
                         .into(),
                 )
@@ -511,7 +514,7 @@ impl PyReader {
             Kind::Ref => {
                 let index = self.r_long()? as usize;
 
-                let reference = self.references.get(&index);
+                let reference = self.references.get(index);
 
                 match reference {
                     Some(_) => Some(Object::LoadRef(index)),
@@ -553,7 +556,8 @@ impl PyReader {
             }
             (Some(x), None) if flag => {
                 idx = Some(self.references.len());
-                self.set_reference(idx.unwrap(), x.clone().into());
+
+                self.references.push(x.clone().into());
             }
             (Some(_), _) => {}
         };

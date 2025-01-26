@@ -11,11 +11,11 @@ use crate::{Code, Kind, Object};
 pub struct PyWriter {
     data: Vec<u8>,
     marshal_version: u8,
-    references: HashMap<usize, Object>,
+    references: Vec<Object>,
 }
 
 impl PyWriter {
-    pub fn new(references: HashMap<usize, Object>, marshal_version: u8) -> Self {
+    pub fn new(references: Vec<Object>, marshal_version: u8) -> Self {
         Self {
             data: Vec::new(),
             marshal_version,
@@ -85,7 +85,7 @@ impl PyWriter {
 
     fn w_object(&mut self, obj: Option<Object>) {
         let is_ref = obj.as_ref().is_some()
-            && self.references.values().any(|x| match *x {
+            && self.references.iter().any(|x| match *x {
                 Object::Float(f) => {
                     // Compare floating point numbers by their bytes
                     if let Object::Float(ref value) = *obj.as_ref().unwrap() {
@@ -200,7 +200,7 @@ impl PyWriter {
                 }
 
                 for item in value.iter() {
-                    self.w_object(Some(item.clone()));
+                    self.w_object(Some((**item).clone()));
                 }
             }
             Some(Object::List(value)) => {
@@ -268,7 +268,7 @@ impl PyWriter {
                 }
             }
             Some(Object::LoadRef(index)) => {
-                let reference = self.references.get(&index);
+                let reference = self.references.get(index);
 
                 match reference {
                     None => {
@@ -281,7 +281,7 @@ impl PyWriter {
                 }
             }
             Some(Object::StoreRef(index)) => {
-                let reference = self.references.get(&index);
+                let reference = self.references.get(index);
 
                 match reference {
                     None => {
