@@ -1,7 +1,7 @@
 # python_marshal
 
 `python_marshal` is a Rust implementation of Python's `marshal` module. It provides functionality to read and write Python objects in a binary format. Additionally, it includes extensions for handling `.pyc` files directly.
-NOTE: This library only supports Python 3.10 and Python 3.11.
+NOTE: This library only supports Python 3.10, 3.11, 3.12 and 3.13.
 
 ## Installation
 Use `cargo add python_marshal` to add this library to your project.

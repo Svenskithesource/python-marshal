@@ -223,8 +223,6 @@ impl PyReader {
     }
 
     fn r_object(&mut self) -> Result<Option<Object>, Error> {
-        let cursor_pos = self.cursor.position();
-
         let code = self.r_u8()?;
 
         let flag = (code & Kind::FlagRef as u8) != 0;
@@ -492,6 +490,16 @@ impl PyReader {
                         major: 3,
                         minor: 11,
                         ..
+                    }
+                    | PyVersion {
+                        major: 3,
+                        minor: 12,
+                        ..
+                    }
+                    | PyVersion {
+                        major: 3,
+                        minor: 13,
+                        ..
                     } => {
                         let argcount = self.r_long()?;
                         let posonlyargcount = self.r_long()?;
@@ -583,24 +591,6 @@ impl PyReader {
             Kind::Unknown => return Err(Error::InvalidKind(obj_kind)),
             Kind::StopIteration | Kind::FlagRef => todo!(),
         };
-
-        // if cfg!(test) {
-        // let mut file = OpenOptions::new()
-        //     .append(true)
-        //     .create(true)
-        //     .open("read_log.txt")
-        //     .expect("Unable to open file");
-
-        // writeln!(
-        //     file,
-        //     "Reading object at index {} ({}), kind: {:?}, with value {:?}",
-        //     cursor_pos,
-        //     self.cursor.position(),
-        //     obj_kind,
-        //     obj,
-        // )
-        // .expect("Unable to write to file");
-        // }
 
         match (&obj, idx) {
             (None, _)

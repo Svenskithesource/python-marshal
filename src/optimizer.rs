@@ -274,7 +274,7 @@ impl Transformer for ReferenceOptimizer {
                     code.name.transform(self);
                     code.lnotab.transform(self);
                 }
-                Code::V311(ref mut code) => {
+                Code::V311(ref mut code) | Code::V312(ref mut code) | Code::V313(ref mut code) => {
                     code.code.transform(self);
                     code.consts.transform(self);
                     code.names.transform(self);
@@ -437,7 +437,7 @@ impl Transformer for ReferenceCounter {
                     code.name.transform(self);
                     code.lnotab.transform(self);
                 }
-                Code::V311(ref mut code) => {
+                Code::V311(ref mut code) | Code::V312(ref mut code) | Code::V313(ref mut code) => {
                     code.code.transform(self);
                     code.consts.transform(self);
                     code.names.transform(self);

@@ -32,10 +32,10 @@ pub enum Kind {
     StopIteration      = b'S',
     Ellipsis           = b'.',
     Int                = b'i',
-    Int64              = b'I',
-    Float              = b'f',
+    Int64              = b'I', // Only generated in version 0
+    Float              = b'f', // Only generated in marshal version 0
     BinaryFloat        = b'g',
-    Complex            = b'x',
+    Complex            = b'x', // Only generated in marshal version 0
     BinaryComplex      = b'y',
     Long               = b'l',
     String             = b's',
@@ -110,10 +110,17 @@ pub struct Code310 {
     pub lnotab:          Box<Object>, // Needs to contain Vec<u8>, as a value or a reference
 }
 
+// Code object enum for all supported Python versions
 #[derive(Clone, Debug, PartialEq)]
 pub enum Code {
+    // Contains the code object for Python 3.10
     V310(code_objects::Code310),
+    // Contains the code object for Python 3.11
     V311(code_objects::Code311),
+    // Contains the code object for Python 3.12 which is exactly the same as 3.11 so we use the same struct
+    V312(code_objects::Code311),
+    // Contains the code object for Python 3.13 which is exactly the same as 3.11 so we use the same struct
+    V313(code_objects::Code311),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -334,7 +341,7 @@ pub fn load_pyc(data: impl Read) -> Result<PycFile, Error> {
 
     let data = &data[16..];
 
-    let (object, references) = load_bytes(data, (3, 10).into())?;
+    let (object, references) = load_bytes(data, python_version)?;
 
     Ok(PycFile {
         python_version,

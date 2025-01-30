@@ -81,9 +81,6 @@ impl PyWriter {
     }
 
     fn w_object(&mut self, obj: Option<Object>, is_ref: bool) {
-        let obj_clone = obj.clone();
-        let cursor_pos = self.data.len();
-
         match obj {
             None => self.w_kind(Kind::Null, is_ref),
             Some(Object::None) => self.w_kind(Kind::None, is_ref),
@@ -237,7 +234,7 @@ impl PyWriter {
                         self.w_long(value.firstlineno.try_into().unwrap());
                         self.w_object(Some((*value.lnotab).clone()), false);
                     }
-                    Code::V311(value) => {
+                    Code::V311(value) | Code::V312(value) | Code::V313(value) => {
                         // https://github.com/python/cpython/blob/3.11/Python/marshal.c#L558
                         self.w_kind(Kind::Code, is_ref);
                         self.w_long(value.argcount.try_into().unwrap());
@@ -285,23 +282,6 @@ impl PyWriter {
                 }
             }
         };
-
-        // if cfg!(test) {
-        // let mut file = OpenOptions::new()
-        //     .append(true)
-        //     .create(true)
-        //     .open("write_log.txt")
-        //     .expect("Unable to open file");
-
-        // writeln!(
-        //     file,
-        //     "Writing object at index {} ({}): {:?} ",
-        //     cursor_pos,
-        //     self.data.len(),
-        //     obj_clone,
-        // )
-        // .expect("Unable to write to file");
-        // }
     }
 
     pub fn write_object(&mut self, obj: Option<Object>) -> Vec<u8> {

@@ -5,11 +5,28 @@ use std::path::{Path, PathBuf};
 use python_marshal::magic::PyVersion;
 
 const DATA_PATH: &str = "tests/data";
-pub const PYTHON_VERSIONS: &[PyVersion] = &[PyVersion {
-    major: 3,
-    minor: 10,
-    patch: 1,
-}];
+pub const PYTHON_VERSIONS: &[PyVersion] = &[
+    PyVersion {
+        major: 3,
+        minor: 10,
+        patch: 1,
+    },
+    PyVersion {
+        major: 3,
+        minor: 11,
+        patch: 1,
+    },
+    PyVersion {
+        major: 3,
+        minor: 12,
+        patch: 1,
+    },
+    PyVersion {
+        major: 3,
+        minor: 13,
+        patch: 1,
+    },
+];
 
 fn init_repo(version: &PyVersion) {
     // Download the standard library for the specified Python version if it doesn't exist
