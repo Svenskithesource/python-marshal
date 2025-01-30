@@ -8,7 +8,7 @@ use num_complex::Complex;
 use num_traits::FromPrimitive;
 
 use crate::{
-    error::Error, Code, Code310, CodeFlags, Kind, Object, ObjectHashable, PyString, PyVersion,
+    code_objects, error::Error, Code, CodeFlags, Kind, Object, ObjectHashable, PyString, PyVersion,
 };
 
 pub struct PyReader {
@@ -466,7 +466,7 @@ impl PyReader {
                             .into();
 
                         Object::Code(
-                            Code::V310(Code310::new(
+                            Code::V310(code_objects::Code310::new(
                                 argcount.try_into().unwrap(),
                                 posonlyargcount.try_into().unwrap(),
                                 kwonlyargcount.try_into().unwrap(),
@@ -483,6 +483,81 @@ impl PyReader {
                                 name,
                                 firstlineno.try_into().unwrap(),
                                 lnotab,
+                                &self.references,
+                            )?)
+                            .into(),
+                        )
+                    }
+                    PyVersion {
+                        major: 3,
+                        minor: 11,
+                        ..
+                    } => {
+                        let argcount = self.r_long()?;
+                        let posonlyargcount = self.r_long()?;
+                        let kwonlyargcount = self.r_long()?;
+                        let stacksize = self.r_long()?;
+                        let flags = CodeFlags::from_bits_retain(self.r_long()? as u32);
+                        let code = self
+                            .r_object()?
+                            .ok_or_else(|| Error::UnexpectedNull)?
+                            .into();
+                        let consts = self
+                            .r_object()?
+                            .ok_or_else(|| Error::UnexpectedNull)?
+                            .into();
+                        let names = self
+                            .r_object()?
+                            .ok_or_else(|| Error::UnexpectedNull)?
+                            .into();
+                        let localsplusnames = self
+                            .r_object()?
+                            .ok_or_else(|| Error::UnexpectedNull)?
+                            .into();
+                        let localspluskinds = self
+                            .r_object()?
+                            .ok_or_else(|| Error::UnexpectedNull)?
+                            .into();
+                        let filename = self
+                            .r_object()?
+                            .ok_or_else(|| Error::UnexpectedNull)?
+                            .into();
+                        let name = self
+                            .r_object()?
+                            .ok_or_else(|| Error::UnexpectedNull)?
+                            .into();
+                        let qualname = self
+                            .r_object()?
+                            .ok_or_else(|| Error::UnexpectedNull)?
+                            .into();
+                        let firstlineno = self.r_long()?;
+                        let linetable = self
+                            .r_object()?
+                            .ok_or_else(|| Error::UnexpectedNull)?
+                            .into();
+                        let exceptiontable = self
+                            .r_object()?
+                            .ok_or_else(|| Error::UnexpectedNull)?
+                            .into();
+
+                        Object::Code(
+                            Code::V311(code_objects::Code311::new(
+                                argcount.try_into().unwrap(),
+                                posonlyargcount.try_into().unwrap(),
+                                kwonlyargcount.try_into().unwrap(),
+                                stacksize.try_into().unwrap(),
+                                flags,
+                                code,
+                                consts,
+                                names,
+                                localsplusnames,
+                                localspluskinds,
+                                filename,
+                                name,
+                                qualname,
+                                firstlineno.try_into().unwrap(),
+                                linetable,
+                                exceptiontable,
                                 &self.references,
                             )?)
                             .into(),

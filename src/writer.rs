@@ -218,6 +218,7 @@ impl PyWriter {
 
                 match *value {
                     Code::V310(value) => {
+                        // https://github.com/python/cpython/blob/3.10/Python/marshal.c#L511
                         self.w_kind(Kind::Code, is_ref);
                         self.w_long(value.argcount.try_into().unwrap());
                         self.w_long(value.posonlyargcount.try_into().unwrap());
@@ -235,6 +236,26 @@ impl PyWriter {
                         self.w_object(Some((*value.name).clone()), false);
                         self.w_long(value.firstlineno.try_into().unwrap());
                         self.w_object(Some((*value.lnotab).clone()), false);
+                    }
+                    Code::V311(value) => {
+                        // https://github.com/python/cpython/blob/3.11/Python/marshal.c#L558
+                        self.w_kind(Kind::Code, is_ref);
+                        self.w_long(value.argcount.try_into().unwrap());
+                        self.w_long(value.posonlyargcount.try_into().unwrap());
+                        self.w_long(value.kwonlyargcount.try_into().unwrap());
+                        self.w_long(value.stacksize.try_into().unwrap());
+                        self.w_long(value.flags.bits().try_into().unwrap());
+                        self.w_object(Some((*value.code).clone()), false);
+                        self.w_object(Some((*value.consts).clone()), false);
+                        self.w_object(Some((*value.names).clone()), false);
+                        self.w_object(Some((*value.localsplusnames).clone()), false);
+                        self.w_object(Some((*value.localspluskinds).clone()), false);
+                        self.w_object(Some((*value.filename).clone()), false);
+                        self.w_object(Some((*value.name).clone()), false);
+                        self.w_object(Some((*value.qualname).clone()), false);
+                        self.w_long(value.firstlineno.try_into().unwrap());
+                        self.w_object(Some((*value.linetable).clone()), false);
+                        self.w_object(Some((*value.exceptiontable).clone()), false);
                     }
                 }
             }

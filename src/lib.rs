@@ -1,3 +1,4 @@
+pub mod code_objects;
 mod error;
 pub mod magic;
 mod optimizer;
@@ -109,74 +110,10 @@ pub struct Code310 {
     pub lnotab:          Box<Object>, // Needs to contain Vec<u8>, as a value or a reference
 }
 
-impl Code310 {
-    pub fn new(
-        argcount: u32,
-        posonlyargcount: u32,
-        kwonlyargcount: u32,
-        nlocals: u32,
-        stacksize: u32,
-        flags: CodeFlags,
-        code: Box<Object>,
-        consts: Box<Object>,
-        names: Box<Object>,
-        varnames: Box<Object>,
-        freevars: Box<Object>,
-        cellvars: Box<Object>,
-        filename: Box<Object>,
-        name: Box<Object>,
-        firstlineno: u32,
-        lnotab: Box<Object>,
-        references: &Vec<Object>,
-    ) -> Result<Self, Error> {
-        // Ensure all corresponding values are of the correct type
-        extract_object!(Some(resolve_object_ref!(Some((*code).clone()), references)?), Object::Bytes(bytes) => bytes, Error::NullInTuple)?;
-        extract_object!(Some(resolve_object_ref!(Some((*consts).clone()), references)?), Object::Tuple(objs) => objs, Error::NullInTuple)?;
-        extract_strings_tuple!(
-            extract_object!(Some(resolve_object_ref!(Some((*names).clone()), references)?), Object::Tuple(objs) => objs, Error::NullInTuple)?,
-            references
-        )?;
-        extract_strings_tuple!(
-            extract_object!(Some(resolve_object_ref!(Some((*varnames).clone()), references)?), Object::Tuple(objs) => objs, Error::NullInTuple)?,
-            references
-        )?;
-        extract_strings_tuple!(
-            extract_object!(Some(resolve_object_ref!(Some((*freevars).clone()), references)?), Object::Tuple(objs) => objs, Error::NullInTuple)?,
-            references
-        )?;
-        extract_strings_tuple!(
-            extract_object!(Some(resolve_object_ref!(Some((*cellvars).clone()), references)?), Object::Tuple(objs) => objs, Error::NullInTuple)?,
-            references
-        )?;
-
-        extract_object!(Some(resolve_object_ref!(Some((*filename).clone()), references)?), Object::String(string) => string, Error::UnexpectedObject)?;
-        extract_object!(Some(resolve_object_ref!(Some((*name).clone()), references)?), Object::String(string) => string, Error::UnexpectedObject)?;
-        extract_object!(Some(resolve_object_ref!(Some((*lnotab).clone()), references)?), Object::Bytes(bytes) => bytes, Error::NullInTuple)?;
-
-        Ok(Self {
-            argcount,
-            posonlyargcount,
-            kwonlyargcount,
-            nlocals,
-            stacksize,
-            flags,
-            code,
-            consts,
-            names,
-            varnames,
-            freevars,
-            cellvars,
-            filename,
-            name,
-            firstlineno,
-            lnotab,
-        })
-    }
-}
-
 #[derive(Clone, Debug, PartialEq)]
 pub enum Code {
-    V310(Code310),
+    V310(code_objects::Code310),
+    V311(code_objects::Code311),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -721,7 +658,7 @@ mod tests {
     }
 
     #[test]
-    fn test_load_code() {
+    fn test_load_code310() {
         // def f(arg1, arg2=None): print(arg1, arg2)
         let data = b"\xe3\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x03\x00\x00\x00C\x00\x00\x00s\x0e\x00\x00\x00t\x00|\x00|\x01\x83\x02\x01\x00d\x00S\x00\xa9\x01N)\x01\xda\x05print)\x02Z\x04arg1Z\x04arg2\xa9\x00r\x03\x00\x00\x00\xfa\x07<stdin>\xda\x01f\x01\x00\x00\x00s\x02\x00\x00\x00\x0e\x00";
         let (kind, refs) = load_bytes(data, (3, 10).into()).unwrap();
@@ -764,6 +701,54 @@ mod tests {
                 assert_eq!(code.firstlineno, 1);
                 assert_eq!(inner_lnotab.len(), 2);
             }
+            _ => panic!("Invalid code object"),
+        }
+    }
+
+    #[test]
+    fn test_load_code311() {
+        // def f(arg1, arg2=None): print(arg1, arg2)
+        let data = b"\xe3\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x04\x00\x00\x00\x03\x00\x00\x00\xf3&\x00\x00\x00\x97\x00t\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00|\x00|\x01\xa6\x02\x00\x00\xab\x02\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00d\x00S\x00\xa9\x01N)\x01\xda\x05print)\x02\xda\x04arg1\xda\x04arg2s\x02\x00\x00\x00  \xfa\x07<stdin>\xda\x01fr\x07\x00\x00\x00\x01\x00\x00\x00s\x17\x00\x00\x00\x80\x00\x9d\x05\x98d\xa0D\xd1\x18)\xd4\x18)\xd0\x18)\xd0\x18)\xd0\x18)\xf3\x00\x00\x00\x00";
+        let (kind, refs) = load_bytes(data, (3, 11).into()).unwrap();
+
+        let code = extract_object!(Some(resolve_object_ref!(Some(kind), refs).unwrap()), Object::Code(code) => code, Error::UnexpectedObject)
+                .unwrap().clone();
+
+        match *code {
+            Code::V311(code) => {
+                let inner_code = extract_object!(Some(resolve_object_ref!(Some((*code.code).clone()), &refs).unwrap()), Object::Bytes(bytes) => bytes, Error::NullInTuple).unwrap();
+                let inner_consts = extract_object!(Some(resolve_object_ref!(Some((*code.consts).clone()), &refs).unwrap()), Object::Tuple(objs) => objs, Error::NullInTuple).unwrap();
+                let inner_names = extract_strings_tuple!(extract_object!(Some(resolve_object_ref!(Some((*code.names).clone()), &refs).unwrap()), Object::Tuple(objs) => objs, Error::NullInTuple).unwrap(), &refs).unwrap();
+                let inner_localsplusnames = extract_strings_tuple!(extract_object!(Some(resolve_object_ref!(Some((*code.localsplusnames).clone()), &refs).unwrap()), Object::Tuple(objs) => objs, Error::NullInTuple).unwrap(), &refs).unwrap();
+                let inner_localspluskinds = extract_object!(Some(resolve_object_ref!(Some((*code.localspluskinds).clone()), &refs).unwrap()), Object::Bytes(bytes) => bytes, Error::NullInTuple).unwrap();
+                let inner_filename = extract_object!(Some(resolve_object_ref!(Some((*code.filename).clone()), &refs).unwrap()), Object::String(string) => string, Error::UnexpectedObject).unwrap();
+                let inner_name = extract_object!(Some(resolve_object_ref!(Some((*code.name).clone()), &refs).unwrap()), Object::String(string) => string, Error::UnexpectedObject).unwrap();
+                let inner_linetable = extract_object!(Some(resolve_object_ref!(Some((*code.linetable).clone()), &refs).unwrap()), Object::Bytes(bytes) => bytes, Error::NullInTuple).unwrap();
+                let inner_exceptiontable = extract_object!(Some(resolve_object_ref!(Some((*code.exceptiontable).clone()), &refs).unwrap()), Object::Bytes(bytes) => bytes, Error::NullInTuple).unwrap();
+
+                assert_eq!(code.argcount, 2);
+                assert_eq!(code.posonlyargcount, 0);
+                assert_eq!(code.kwonlyargcount, 0);
+                assert_eq!(code.stacksize, 4);
+                // assert_eq!(code.flags, );
+                assert_eq!(inner_code.len(), 38);
+                assert_eq!(inner_consts.len(), 1);
+                assert_eq!(inner_names.len(), 1);
+                assert_eq!(inner_localsplusnames.len(), 2);
+                assert_eq!(inner_localspluskinds.len(), 2);
+                assert_eq!(
+                    inner_filename,
+                    PyString::new("<stdin>".into(), Kind::ShortAscii).into()
+                );
+                assert_eq!(
+                    inner_name,
+                    PyString::new("f".into(), Kind::ShortAsciiInterned).into()
+                );
+                assert_eq!(code.firstlineno, 1);
+                assert_eq!(inner_linetable.len(), 23);
+                assert_eq!(inner_exceptiontable.len(), 0);
+            }
+            _ => panic!("Invalid code object"),
         }
     }
 
@@ -955,7 +940,7 @@ mod tests {
         // def f(arg1, arg2=None): print(arg1, arg2)
         let data = b"c\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x03\x00\x00\x00C\x00\x00\x00s\x0e\x00\x00\x00t\x00|\x00|\x01\x83\x02\x01\x00d\x00S\x00)\x01N)\x01z\x05print)\x02z\x04arg1z\x04arg2)\x00)\x00z\x07<stdin>z\x01f\x01\x00\x00\x00s\x02\x00\x00\x00\x0e\x00";
 
-        let object = Code::V310(Code310 {
+        let object = Code::V310(code_objects::Code310 {
             argcount: 2,
             posonlyargcount: 0,
             kwonlyargcount: 0,

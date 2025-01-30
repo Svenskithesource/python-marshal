@@ -274,6 +274,18 @@ impl Transformer for ReferenceOptimizer {
                     code.name.transform(self);
                     code.lnotab.transform(self);
                 }
+                Code::V311(ref mut code) => {
+                    code.code.transform(self);
+                    code.consts.transform(self);
+                    code.names.transform(self);
+                    code.localsplusnames.transform(self);
+                    code.localspluskinds.transform(self);
+                    code.filename.transform(self);
+                    code.name.transform(self);
+                    code.qualname.transform(self);
+                    code.linetable.transform(self);
+                    code.exceptiontable.transform(self);
+                }
             }
         }
 
@@ -424,6 +436,18 @@ impl Transformer for ReferenceCounter {
                     code.filename.transform(self);
                     code.name.transform(self);
                     code.lnotab.transform(self);
+                }
+                Code::V311(ref mut code) => {
+                    code.code.transform(self);
+                    code.consts.transform(self);
+                    code.names.transform(self);
+                    code.localsplusnames.transform(self);
+                    code.localspluskinds.transform(self);
+                    code.filename.transform(self);
+                    code.name.transform(self);
+                    code.qualname.transform(self);
+                    code.linetable.transform(self);
+                    code.exceptiontable.transform(self);
                 }
             }
         }
