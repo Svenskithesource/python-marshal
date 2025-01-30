@@ -1,17 +1,11 @@
 use core::panic;
-use std::{
-    collections::HashMap,
-    fs::OpenOptions,
-    io::{Cursor, Read},
-    sync::Arc,
-};
+use std::io::{Cursor, Read};
 
 use bstr::BString;
 use indexmap::{IndexMap, IndexSet};
 use num_bigint::{BigInt, BigUint};
 use num_complex::Complex;
 use num_traits::FromPrimitive;
-use std::io::Write;
 
 use crate::{
     error::Error, Code, Code310, CodeFlags, Kind, Object, ObjectHashable, PyString, PyVersion,

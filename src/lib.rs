@@ -9,7 +9,7 @@ use bitflags::bitflags;
 use bstr::BString;
 use error::Error;
 use hashable::HashableHashSet;
-use indexmap::{set::MutableValues, IndexMap, IndexSet};
+use indexmap::{IndexMap, IndexSet};
 use magic::PyVersion;
 use num_bigint::BigInt;
 use num_complex::Complex;
@@ -17,11 +17,7 @@ use num_derive::{FromPrimitive, ToPrimitive};
 use optimizer::{get_used_references, ReferenceOptimizer};
 use ordered_float::OrderedFloat;
 use reader::PyReader;
-use std::{
-    collections::{HashMap, HashSet},
-    io::{Read, Write},
-    sync::Arc,
-};
+use std::io::{Read, Write};
 use writer::PyWriter;
 
 #[derive(Debug, Clone, Copy, FromPrimitive, ToPrimitive, PartialEq, Eq, Hash)]
@@ -236,7 +232,7 @@ pub enum Object {
     StoreRef  (usize),
 }
 
-impl Eq for Object {} // Required to check if Code objects are equal with float values
+// impl Eq for Object {} // Required to check if Code objects are equal with float values
 
 #[rustfmt::skip]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -445,7 +441,7 @@ pub fn dump_bytes(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
+    use std::collections::{HashMap, HashSet};
     use std::io::Write;
 
     use tempfile::NamedTempFile;

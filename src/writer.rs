@@ -1,10 +1,7 @@
-use std::{collections::HashMap, fs::OpenOptions, sync::Arc};
-
 use bstr::BString;
 use num_bigint::BigInt;
 use num_complex::Complex;
 use num_traits::{Signed, ToPrimitive};
-use std::io::Write;
 
 use crate::{Code, Kind, Object};
 
@@ -83,33 +80,7 @@ impl PyWriter {
         self.data.extend_from_slice(&value);
     }
 
-    fn w_object(&mut self, obj: Option<Object>) {
-        let is_ref = obj.as_ref().is_some()
-            && self.references.iter().any(|x| match *x {
-                Object::Float(f) => {
-                    // Compare floating point numbers by their bytes
-                    if let Object::Float(ref value) = *obj.as_ref().unwrap() {
-                        f.to_le_bytes() == value.to_le_bytes()
-                    } else {
-                        false
-                    }
-                }
-                Object::Complex(Complex { re, im }) => {
-                    // Compare floating point numbers by their bytes
-                    if let Object::Complex(Complex {
-                        re: ref re2,
-                        im: ref im2,
-                    }) = *obj.as_ref().unwrap()
-                    {
-                        re.to_le_bytes() == re2.to_le_bytes()
-                            && im.to_le_bytes() == im2.to_le_bytes()
-                    } else {
-                        false
-                    }
-                }
-                _ => *x == *obj.as_ref().unwrap(),
-            });
-
+    fn w_object(&mut self, obj: Option<Object>, is_ref: bool) {
         let obj_clone = obj.clone();
         let cursor_pos = self.data.len();
 
@@ -200,7 +171,7 @@ impl PyWriter {
                 }
 
                 for item in value.iter() {
-                    self.w_object(Some((**item).clone()));
+                    self.w_object(Some((**item).clone()), false);
                 }
             }
             Some(Object::List(value)) => {
@@ -210,14 +181,14 @@ impl PyWriter {
                 self.w_long(size as i32);
 
                 for item in value.iter() {
-                    self.w_object(Some((*item.clone()).clone()));
+                    self.w_object(Some((*item.clone()).clone()), false);
                 }
             }
             Some(Object::Dict(value)) => {
                 self.w_kind(Kind::Dict, is_ref);
                 for (key, value) in value.iter() {
-                    self.w_object(Some((*key).clone().into()));
-                    self.w_object(Some((**value).clone()).into());
+                    self.w_object(Some((*key).clone().into()), false);
+                    self.w_object(Some((**value).clone()).into(), false);
                 }
 
                 self.w_kind(Kind::Null, is_ref); // NULL object terminated
@@ -229,7 +200,7 @@ impl PyWriter {
                 self.w_long(size as i32);
 
                 for item in value.iter() {
-                    self.w_object(Some((*item).clone().into()));
+                    self.w_object(Some((*item).clone().into()), false);
                 }
             }
             Some(Object::FrozenSet(value)) => {
@@ -239,7 +210,7 @@ impl PyWriter {
                 self.w_long(size as i32);
 
                 for item in value.iter() {
-                    self.w_object(Some((*item).clone().into()));
+                    self.w_object(Some((*item).clone().into()), false);
                 }
             }
             Some(Object::Code(value)) => {
@@ -254,16 +225,16 @@ impl PyWriter {
                         self.w_long(value.nlocals.try_into().unwrap());
                         self.w_long(value.stacksize.try_into().unwrap());
                         self.w_long(value.flags.bits().try_into().unwrap());
-                        self.w_object(Some((*value.code).clone()));
-                        self.w_object(Some((*value.consts).clone()));
-                        self.w_object(Some((*value.names).clone()));
-                        self.w_object(Some((*value.varnames).clone()));
-                        self.w_object(Some((*value.freevars).clone()));
-                        self.w_object(Some((*value.cellvars).clone()));
-                        self.w_object(Some((*value.filename).clone()));
-                        self.w_object(Some((*value.name).clone()));
+                        self.w_object(Some((*value.code).clone()), false);
+                        self.w_object(Some((*value.consts).clone()), false);
+                        self.w_object(Some((*value.names).clone()), false);
+                        self.w_object(Some((*value.varnames).clone()), false);
+                        self.w_object(Some((*value.freevars).clone()), false);
+                        self.w_object(Some((*value.cellvars).clone()), false);
+                        self.w_object(Some((*value.filename).clone()), false);
+                        self.w_object(Some((*value.name).clone()), false);
                         self.w_long(value.firstlineno.try_into().unwrap());
-                        self.w_object(Some((*value.lnotab).clone()));
+                        self.w_object(Some((*value.lnotab).clone()), false);
                     }
                 }
             }
@@ -288,7 +259,7 @@ impl PyWriter {
                         panic!("Reference not found in references list");
                     }
                     Some(reference) => {
-                        self.w_object(Some((*reference).clone()));
+                        self.w_object(Some((*reference).clone()), true);
                     }
                 }
             }
@@ -313,7 +284,7 @@ impl PyWriter {
     }
 
     pub fn write_object(&mut self, obj: Option<Object>) -> Vec<u8> {
-        self.w_object(obj);
+        self.w_object(obj, false);
 
         return self.data.clone();
     }

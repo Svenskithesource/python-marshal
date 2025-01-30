@@ -1,7 +1,7 @@
 use std::io::BufReader;
 
 use num_traits::FromPrimitive;
-use python_marshal::{optimize_references, Kind};
+use python_marshal::{dump_bytes, optimize_references, Kind};
 
 mod common;
 
@@ -38,7 +38,10 @@ fn test_recompile_standard_lib() {
             let code = python_marshal::load_pyc(&mut reader).expect("Failed to read pyc file");
             let original = std::fs::read(&pyc_file).expect("Failed to read pyc file");
 
-            optimize_references(code.clone().object, code.clone().references); // Make sure this doesn't panic
+            // let (temp_obj, temp_refs) =
+            //     optimize_references(code.clone().object, code.clone().references); // Make sure this doesn't panic
+            // dump_bytes(temp_obj, Some(temp_refs), code.python_version, 4)
+            //     .expect("Failed to dump bytes");
 
             let mut dumped = Vec::new();
 

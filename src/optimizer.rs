@@ -1,7 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use std::collections::HashSet;
 
 use hashable::HashableHashSet;
 use indexmap::set::MutableValues;
@@ -191,7 +188,7 @@ impl ObjectHashable {
 pub struct ReferenceOptimizer {
     pub references: Vec<Object>,
     pub references_used: HashSet<usize>,
-    removed_references: usize,
+    removed_references: HashSet<usize>,
 }
 
 impl ReferenceOptimizer {
@@ -199,7 +196,7 @@ impl ReferenceOptimizer {
         Self {
             references,
             references_used,
-            removed_references: 0,
+            removed_references: HashSet::new(),
         }
     }
 }
@@ -207,7 +204,18 @@ impl ReferenceOptimizer {
 impl Transformer for ReferenceOptimizer {
     fn visit_LoadRef(&mut self, obj: &mut Object) -> Option<Object> {
         if let Object::LoadRef(index) = obj {
-            Some(Object::LoadRef(*index - self.removed_references))
+            if self.removed_references.iter().any(|i| *i < *index) {
+                let new_index = *index
+                    - self
+                        .removed_references
+                        .iter()
+                        .filter(|i| *i < index)
+                        .count();
+
+                Some(Object::LoadRef(new_index)) // Update the index to account for removed references
+            } else {
+                None
+            }
         } else {
             None
         }
@@ -216,21 +224,36 @@ impl Transformer for ReferenceOptimizer {
     fn visit_StoreRef(&mut self, obj: &mut Object) -> Option<Object> {
         if let Object::StoreRef(index) = obj {
             if !self.references_used.contains(index) {
-                let mut referenced_obj = self.references.get(*index).unwrap().clone();
-                self.references.remove(*index);
-                self.removed_references += 1;
+                let new_index = *index
+                    - self
+                        .removed_references
+                        .iter()
+                        .filter(|i| *i < index)
+                        .count();
+
+                let mut referenced_obj = self.references.get(new_index).unwrap().clone();
+                self.references.remove(new_index);
+                self.removed_references.insert(*index);
 
                 referenced_obj.transform(self); // Remove any nested references
 
                 Some(referenced_obj)
-            } else {
-                let new_index = *index - self.removed_references;
+            } else if self.removed_references.iter().any(|i| *i < *index) {
+                let new_index = *index
+                    - self
+                        .removed_references
+                        .iter()
+                        .filter(|i| *i < index)
+                        .count();
+
                 let mut referenced_obj = self.references.get(new_index).unwrap().clone();
                 referenced_obj.transform(self);
 
                 self.references[new_index] = referenced_obj; // Make sure all indexes are updated in the references
 
                 Some(Object::StoreRef(new_index)) // Update the index to account for removed references
+            } else {
+                None
             }
         } else {
             None

@@ -3,13 +3,12 @@ name = "python_marshal"
 license = "GPL-3.0-or-later"
 description = "A Rust library for reading and writing Python marshal files."
 readme = "README.md"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2021"
 
 [dependencies]
 bitflags = "2.6.0"
 bstr = "1.11.3"
-encoding_rs = "0.8.35"
 hashable = "0.0.0"
 indexmap = "2.7.1"
 num-bigint = "0.4.6"
@@ -17,7 +16,6 @@ num-complex = "0.4.6"
 num-derive = "0.4.2"
 num-traits = "0.2.19"
 ordered-float = "4.2.2"
-widestring = "1.1.0"
 
 [dev-dependencies]
 tempfile = "3.15.0"
