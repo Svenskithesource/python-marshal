@@ -3,6 +3,7 @@ mod error;
 pub mod magic;
 mod optimizer;
 mod reader;
+pub mod resolver;
 mod walker;
 mod writer;
 
@@ -15,7 +16,7 @@ use magic::PyVersion;
 use num_bigint::BigInt;
 use num_complex::Complex;
 use num_derive::{FromPrimitive, ToPrimitive};
-use optimizer::{get_used_references, ReferenceOptimizer};
+use optimizer::{get_used_references, ReferenceOptimizer, Transformable};
 use ordered_float::OrderedFloat;
 use reader::PyReader;
 use std::io::{Read, Write};
@@ -392,6 +393,8 @@ mod tests {
 
     use error::Error;
 
+    use crate::resolver::{get_recursive_refs, resolve_all_refs};
+
     use super::*;
 
     #[test]
@@ -537,7 +540,6 @@ mod tests {
     #[test]
     fn test_reference() {
         // Reference to the first element
-        // let data = b"\xdb\x01\x00\x00\x00r\x00\x00\x00\x00";
         let data = b"\xdb\x03\x00\x00\x00\xe9\x01\x00\x00\x00r\x01\x00\x00\x00r\x01\x00\x00\x00";
         let (kind, refs) = load_bytes(data, (3, 10).into()).unwrap();
 
@@ -560,6 +562,35 @@ mod tests {
         );
 
         assert_eq!(*refs.get(1).unwrap(), Object::Long(BigInt::from(1)).into());
+
+        // Recursive reference
+        let data = b"\xdb\x01\x00\x00\x00r\x00\x00\x00\x00";
+
+        let (kind, refs) = load_bytes(data, (3, 10).into()).unwrap();
+
+        dbg!(&kind, &refs);
+        dbg!(get_recursive_refs(kind, refs).unwrap());
+    }
+
+    #[test]
+    fn test_resolve_refs() {
+        // Reference to the first element
+        let data = b"\xdb\x03\x00\x00\x00\xe9\x01\x00\x00\x00r\x01\x00\x00\x00r\x01\x00\x00\x00";
+        let (kind, refs) = load_bytes(data, (3, 10).into()).unwrap();
+
+        let (obj, refs) = resolve_all_refs(kind, refs).unwrap();
+
+        dbg!(&obj, &refs);
+
+        assert_eq!(
+            extract_object!(Some(obj), Object::List(list) => list, Error::UnexpectedObject)
+                .unwrap(),
+            vec![
+                Object::Long(BigInt::from(1)),
+                Object::Long(BigInt::from(1)),
+                Object::Long(BigInt::from(1))
+            ]
+        );
     }
 
     #[test]

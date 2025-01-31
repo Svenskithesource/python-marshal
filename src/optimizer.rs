@@ -6,7 +6,7 @@ use indexmap::set::MutableValues;
 use crate::{Code, Object, ObjectHashable};
 
 #[allow(non_snake_case, unused_variables)]
-pub trait Transformer {
+pub trait Transformer: Sized {
     // Return None to keep the object as is
     fn visit(&mut self, obj: &mut Object) -> Option<Object> {
         match obj {
@@ -67,26 +67,86 @@ pub trait Transformer {
     }
 
     fn visit_Tuple(&mut self, obj: &mut Object) -> Option<Object> {
+        if let Object::Tuple(tuple) = obj {
+            for obj in tuple {
+                obj.transform(self);
+            }
+        }
+
         None
     }
 
     fn visit_List(&mut self, obj: &mut Object) -> Option<Object> {
+        if let Object::List(list) = obj {
+            for obj in list.iter_mut() {
+                obj.transform(self);
+            }
+        }
+
         None
     }
 
     fn visit_Dict(&mut self, obj: &mut Object) -> Option<Object> {
+        if let Object::Dict(dict) = obj {
+            for (_, value) in dict.iter_mut() {
+                value.transform(self);
+            }
+        }
+
         None
     }
 
     fn visit_Set(&mut self, obj: &mut Object) -> Option<Object> {
+        if let Object::Set(set) = obj {
+            for i in 0..set.len() {
+                let obj = set.get_index_mut2(i).unwrap();
+                obj.transform(self);
+            }
+        }
+
         None
     }
 
     fn visit_FrozenSet(&mut self, obj: &mut Object) -> Option<Object> {
+        if let Object::FrozenSet(set) = obj {
+            for i in 0..set.len() {
+                let obj = set.get_index_mut2(i).unwrap();
+                obj.transform(self);
+            }
+        }
+
         None
     }
 
     fn visit_Code(&mut self, obj: &mut Object) -> Option<Object> {
+        if let Object::Code(code) = obj {
+            match **code {
+                Code::V310(ref mut code) => {
+                    code.code.transform(self);
+                    code.consts.transform(self);
+                    code.names.transform(self);
+                    code.varnames.transform(self);
+                    code.freevars.transform(self);
+                    code.cellvars.transform(self);
+                    code.filename.transform(self);
+                    code.name.transform(self);
+                    code.lnotab.transform(self);
+                }
+                Code::V311(ref mut code) | Code::V312(ref mut code) | Code::V313(ref mut code) => {
+                    code.code.transform(self);
+                    code.consts.transform(self);
+                    code.names.transform(self);
+                    code.localsplusnames.transform(self);
+                    code.localspluskinds.transform(self);
+                    code.filename.transform(self);
+                    code.name.transform(self);
+                    code.qualname.transform(self);
+                    code.linetable.transform(self);
+                    code.exceptiontable.transform(self);
+                }
+            }
+        }
+
         None
     }
 
@@ -153,11 +213,28 @@ pub trait Transformer {
     }
 
     fn visit_HashableTuple(&mut self, obj: &mut ObjectHashable) -> Option<ObjectHashable> {
+        if let ObjectHashable::Tuple(tuple) = obj {
+            for obj in tuple.iter_mut() {
+                obj.transform(self);
+            }
+        }
+
         None
     }
 
     fn visit_HashableFrozenSet(&mut self, obj: &mut ObjectHashable) -> Option<ObjectHashable> {
-        None
+        if let ObjectHashable::FrozenSet(set) = obj {
+            let mut new_set = HashableHashSet::new();
+            for obj in set.iter() {
+                let mut obj = obj.clone();
+                obj.transform(self);
+                new_set.insert(obj);
+            }
+
+            Some(ObjectHashable::FrozenSet(new_set))
+        } else {
+            None
+        }
     }
 
     fn visit_HashableLoadRef(&mut self, obj: &mut ObjectHashable) -> Option<ObjectHashable> {
@@ -169,16 +246,20 @@ pub trait Transformer {
     }
 }
 
-impl Object {
-    pub fn transform(&mut self, transformer: &mut impl Transformer) {
+pub trait Transformable {
+    fn transform(&mut self, transformer: &mut impl Transformer);
+}
+
+impl Transformable for Object {
+    fn transform(&mut self, transformer: &mut impl Transformer) {
         if let Some(new_obj) = transformer.visit(self) {
             *self = new_obj;
         }
     }
 }
 
-impl ObjectHashable {
-    pub fn transform(&mut self, transformer: &mut impl Transformer) {
+impl Transformable for ObjectHashable {
+    fn transform(&mut self, transformer: &mut impl Transformer) {
         if let Some(new_obj) = transformer.visit_Hashable(self) {
             *self = new_obj;
         }
@@ -260,110 +341,59 @@ impl Transformer for ReferenceOptimizer {
         }
     }
 
-    fn visit_Code(&mut self, obj: &mut Object) -> Option<Object> {
-        if let Object::Code(code) = obj {
-            match **code {
-                Code::V310(ref mut code) => {
-                    code.code.transform(self);
-                    code.consts.transform(self);
-                    code.names.transform(self);
-                    code.varnames.transform(self);
-                    code.freevars.transform(self);
-                    code.cellvars.transform(self);
-                    code.filename.transform(self);
-                    code.name.transform(self);
-                    code.lnotab.transform(self);
-                }
-                Code::V311(ref mut code) | Code::V312(ref mut code) | Code::V313(ref mut code) => {
-                    code.code.transform(self);
-                    code.consts.transform(self);
-                    code.names.transform(self);
-                    code.localsplusnames.transform(self);
-                    code.localspluskinds.transform(self);
-                    code.filename.transform(self);
-                    code.name.transform(self);
-                    code.qualname.transform(self);
-                    code.linetable.transform(self);
-                    code.exceptiontable.transform(self);
-                }
-            }
-        }
+    fn visit_HashableLoadRef(&mut self, obj: &mut ObjectHashable) -> Option<ObjectHashable> {
+        if let ObjectHashable::LoadRef(index) = obj {
+            if self.removed_references.iter().any(|i| *i < *index) {
+                let new_index = *index
+                    - self
+                        .removed_references
+                        .iter()
+                        .filter(|i| *i < index)
+                        .count();
 
-        None
+                Some(ObjectHashable::LoadRef(new_index)) // Update the index to account for removed references
+            } else {
+                None
+            }
+        } else {
+            None
+        }
     }
 
-    fn visit_Dict(&mut self, obj: &mut Object) -> Option<Object> {
-        if let Object::Dict(dict) = obj {
-            for (_, value) in dict.iter_mut() {
-                value.transform(self);
+    fn visit_HashableStoreRef(&mut self, obj: &mut ObjectHashable) -> Option<ObjectHashable> {
+        if let ObjectHashable::StoreRef(index) = obj {
+            if !self.references_used.contains(index) {
+                let new_index = *index
+                    - self
+                        .removed_references
+                        .iter()
+                        .filter(|i| *i < index)
+                        .count();
+
+                let mut referenced_obj = self.references.get(new_index).unwrap().clone();
+                self.references.remove(new_index);
+                self.removed_references.insert(*index);
+
+                referenced_obj.transform(self); // Remove any nested references
+
+                Some(referenced_obj.try_into().unwrap())
+            } else if self.removed_references.iter().any(|i| *i < *index) {
+                let new_index = *index
+                    - self
+                        .removed_references
+                        .iter()
+                        .filter(|i| *i < index)
+                        .count();
+
+                let mut referenced_obj = self.references.get(new_index).unwrap().clone();
+                referenced_obj.transform(self);
+
+                self.references[new_index] = referenced_obj; // Make sure all indexes are updated in the references
+
+                Some(ObjectHashable::StoreRef(new_index)) // Update the index to account for removed references
+            } else {
+                None
             }
-        }
-
-        None
-    }
-
-    fn visit_FrozenSet(&mut self, obj: &mut Object) -> Option<Object> {
-        if let Object::FrozenSet(set) = obj {
-            for i in 0..set.len() {
-                let obj = set.get_index_mut2(i).unwrap();
-                obj.transform(self);
-            }
-        }
-
-        None
-    }
-
-    fn visit_Tuple(&mut self, obj: &mut Object) -> Option<Object> {
-        if let Object::Tuple(tuple) = obj {
-            for obj in tuple {
-                obj.transform(self);
-            }
-        }
-
-        None
-    }
-
-    fn visit_Set(&mut self, obj: &mut Object) -> Option<Object> {
-        if let Object::Set(set) = obj {
-            for i in 0..set.len() {
-                let obj = set.get_index_mut2(i).unwrap();
-                obj.transform(self);
-            }
-        }
-
-        None
-    }
-
-    fn visit_List(&mut self, obj: &mut Object) -> Option<Object> {
-        if let Object::List(list) = obj {
-            for obj in list.iter_mut() {
-                obj.transform(self);
-            }
-        }
-
-        None
-    }
-
-    fn visit_HashableTuple(&mut self, obj: &mut ObjectHashable) -> Option<ObjectHashable> {
-        if let ObjectHashable::Tuple(tuple) = obj {
-            for obj in tuple.iter_mut() {
-                obj.transform(self);
-            }
-        }
-
-        None
-    }
-
-    fn visit_HashableFrozenSet(&mut self, obj: &mut ObjectHashable) -> Option<ObjectHashable> {
-        if let ObjectHashable::FrozenSet(set) = obj {
-            let mut new_set = HashableHashSet::new();
-            for obj in set.iter() {
-                let mut obj = obj.clone();
-                obj.transform(self);
-                new_set.insert(obj);
-            }
-
-            Some(ObjectHashable::FrozenSet(new_set))
         } else {
             None
         }
@@ -417,112 +447,6 @@ impl Transformer for ReferenceCounter {
             if let Some(resolved_obj) = self.references.get_mut(*index) {
                 let mut temp_obj = resolved_obj.clone();
                 temp_obj.transform(self);
-            }
-        }
-
-        None
-    }
-
-    fn visit_Code(&mut self, obj: &mut Object) -> Option<Object> {
-        if let Object::Code(code) = obj {
-            match **code {
-                Code::V310(ref mut code) => {
-                    code.code.transform(self);
-                    code.consts.transform(self);
-                    code.names.transform(self);
-                    code.varnames.transform(self);
-                    code.freevars.transform(self);
-                    code.cellvars.transform(self);
-                    code.filename.transform(self);
-                    code.name.transform(self);
-                    code.lnotab.transform(self);
-                }
-                Code::V311(ref mut code) | Code::V312(ref mut code) | Code::V313(ref mut code) => {
-                    code.code.transform(self);
-                    code.consts.transform(self);
-                    code.names.transform(self);
-                    code.localsplusnames.transform(self);
-                    code.localspluskinds.transform(self);
-                    code.filename.transform(self);
-                    code.name.transform(self);
-                    code.qualname.transform(self);
-                    code.linetable.transform(self);
-                    code.exceptiontable.transform(self);
-                }
-            }
-        }
-
-        None
-    }
-
-    fn visit_Dict(&mut self, obj: &mut Object) -> Option<Object> {
-        if let Object::Dict(dict) = obj {
-            for (_, value) in dict.iter_mut() {
-                value.transform(self);
-            }
-        }
-
-        None
-    }
-
-    fn visit_FrozenSet(&mut self, obj: &mut Object) -> Option<Object> {
-        if let Object::FrozenSet(set) = obj {
-            for i in 0..set.len() {
-                let obj = set.get_index_mut2(i).unwrap();
-                obj.transform(self);
-            }
-        }
-
-        None
-    }
-
-    fn visit_Tuple(&mut self, obj: &mut Object) -> Option<Object> {
-        if let Object::Tuple(tuple) = obj {
-            for obj in tuple {
-                obj.transform(self);
-            }
-        }
-
-        None
-    }
-
-    fn visit_Set(&mut self, obj: &mut Object) -> Option<Object> {
-        if let Object::Set(set) = obj {
-            for i in 0..set.len() {
-                let obj = set.get_index_mut2(i).unwrap();
-                obj.transform(self);
-            }
-        }
-
-        None
-    }
-
-    fn visit_List(&mut self, obj: &mut Object) -> Option<Object> {
-        if let Object::List(list) = obj {
-            for obj in list.iter() {
-                let mut obj = (**obj).clone();
-                obj.transform(self);
-            }
-        }
-
-        None
-    }
-
-    fn visit_HashableTuple(&mut self, obj: &mut ObjectHashable) -> Option<ObjectHashable> {
-        if let ObjectHashable::Tuple(tuple) = obj {
-            for obj in tuple.iter_mut() {
-                obj.transform(self);
-            }
-        }
-
-        None
-    }
-
-    fn visit_HashableFrozenSet(&mut self, obj: &mut ObjectHashable) -> Option<ObjectHashable> {
-        if let ObjectHashable::FrozenSet(set) = obj {
-            for obj in set.iter() {
-                let mut obj = obj.clone();
-                obj.transform(self);
             }
         }
 
