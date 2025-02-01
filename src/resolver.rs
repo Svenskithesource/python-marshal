@@ -166,17 +166,11 @@ pub fn resolve_all_refs(
     // Resolve all non-recursively stored references
     let recursive_refs = get_recursive_refs(obj.clone(), references.clone())?;
 
-    dbg!(recursive_refs.clone());
-
     let mut resolver = Resolver::new(references.clone(), recursive_refs);
 
     let mut obj = obj.clone();
 
-    dbg!(&resolver.references);
-
     obj.transform(&mut resolver);
-
-    dbg!(&resolver.references);
 
     let (obj, resolved_refs) = optimize_references(obj, resolver.references);
 

@@ -580,17 +580,20 @@ mod tests {
 
         let (obj, refs) = resolve_all_refs(kind, refs).unwrap();
 
-        dbg!(&obj, &refs);
-
         assert_eq!(
             extract_object!(Some(obj), Object::List(list) => list, Error::UnexpectedObject)
-                .unwrap(),
+                .unwrap()
+                .iter()
+                .map(|o| *o.clone())
+                .collect::<Vec<_>>(),
             vec![
                 Object::Long(BigInt::from(1)),
                 Object::Long(BigInt::from(1)),
                 Object::Long(BigInt::from(1))
             ]
         );
+
+        assert_eq!(refs.len(), 0);
     }
 
     #[test]
