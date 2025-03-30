@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use python_marshal::magic::PyVersion;
 
-const DATA_PATH: &str = "tests/data";
+pub const DATA_PATH: &str = "tests/data";
 pub const PYTHON_VERSIONS: &[PyVersion] = &[
     PyVersion {
         major: 3,
