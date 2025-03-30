@@ -69,7 +69,7 @@ impl PyWriter {
         }
 
         self.data
-            .extend_from_slice(&value.iter().map(|&x| x as u8).collect::<Vec<u8>>());
+            .extend_from_slice(&value.iter().map(|&x| x).collect::<Vec<u8>>());
     }
 
     fn w_float_bin(&mut self, value: f64) {
@@ -81,7 +81,7 @@ impl PyWriter {
     }
 
     fn w_bytes(&mut self, value: &Vec<u8>) {
-        self.data.extend_from_slice(&value);
+        self.data.extend_from_slice(value);
     }
 
     fn w_object(&mut self, obj: Option<Object>, is_ref: bool) {
@@ -144,18 +144,18 @@ impl PyWriter {
                 self.w_bytes(&value);
             }
             Some(Object::String(value)) => {
-                let str_value = &*&value.value;
+                let str_value = &value.value;
 
                 match value.kind {
                     Kind::ASCII | Kind::ASCIIInterned | Kind::Interned => {
                         self.w_kind(value.kind, is_ref);
                         self.w_long(str_value.len() as i32);
-                        self.w_bytes(&str_value.iter().map(|&x| x as u8).collect::<Vec<u8>>());
+                        self.w_bytes(&str_value.iter().map(|&x| x).collect::<Vec<u8>>());
                     }
                     Kind::ShortAscii | Kind::ShortAsciiInterned => {
                         self.w_kind(value.kind, is_ref);
                         self.w_u8(str_value.len() as u8);
-                        self.w_bytes(&str_value.iter().map(|&x| x as u8).collect::<Vec<u8>>());
+                        self.w_bytes(&str_value.iter().map(|&x| x).collect::<Vec<u8>>());
                     }
                     Kind::Unicode => {
                         self.w_kind(Kind::Unicode, is_ref);
@@ -299,6 +299,6 @@ impl PyWriter {
     pub fn write_object(&mut self, obj: Option<Object>) -> Vec<u8> {
         self.w_object(obj, false);
 
-        return self.data.clone();
+        self.data.clone()
     }
 }

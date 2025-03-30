@@ -1,7 +1,5 @@
 use crate::{
-    dump_bytes,
     error::Error,
-    magic::PyVersion,
     optimize_references,
     optimizer::{Transformable, Transformer},
     Object, ObjectHashable,

@@ -1,8 +1,7 @@
-use std::{backtrace, collections::{HashMap, HashSet}, thread::panicking};
+use std::collections::{HashMap, HashSet};
 
 use hashable::HashableHashSet;
 use indexmap::set::MutableValues;
-use log::trace;
 
 use crate::{Code, Object, ObjectHashable};
 
@@ -283,16 +282,6 @@ impl ReferenceOptimizer {
             reference_map: HashMap::new(),
         }
     }
-}
-
-fn get_new_index(index: usize, removed_references: &HashSet<usize>) -> usize {
-    // Recalculate the index of the reference after removing some references
-
-    index
-        - removed_references
-            .iter()
-            .filter(|removed_index| **removed_index < index)
-            .count()
 }
 
 impl Transformer for ReferenceOptimizer {

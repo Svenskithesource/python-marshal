@@ -19,7 +19,6 @@ use num_derive::{FromPrimitive, ToPrimitive};
 use optimizer::{get_used_references, ReferenceOptimizer, Transformable};
 use ordered_float::OrderedFloat;
 use reader::PyReader;
-use resolver::get_recursive_refs;
 use std::io::{Read, Write};
 use writer::PyWriter;
 
@@ -380,7 +379,7 @@ pub fn dump_bytes(
         return Err(Error::UnsupportedPyVersion(python_version));
     }
 
-    let mut py_writer = PyWriter::new(references.unwrap_or(Vec::new()), marshal_version);
+    let mut py_writer = PyWriter::new(references.unwrap_or_default(), marshal_version);
 
     Ok(py_writer.write_object(Some(obj)))
 }
