@@ -5,10 +5,13 @@ use num_traits::{Signed, ToPrimitive};
 
 use crate::{Code, Kind, Object};
 
+const DEPTH_LIMIT: usize = 1000;
+
 pub struct PyWriter {
     data: Vec<u8>,
     marshal_version: u8,
     references: Vec<Object>,
+    depth: usize,
 }
 
 impl PyWriter {
@@ -17,6 +20,7 @@ impl PyWriter {
             data: Vec::new(),
             marshal_version,
             references,
+            depth: 0,
         }
     }
 
@@ -81,6 +85,12 @@ impl PyWriter {
     }
 
     fn w_object(&mut self, obj: Option<Object>, is_ref: bool) {
+        self.depth += 1;
+
+        if self.depth > DEPTH_LIMIT {
+            panic!("Depth limit reached while trying to write {:?}", obj);
+        }
+
         match obj {
             None => self.w_kind(Kind::Null, is_ref),
             Some(Object::None) => self.w_kind(Kind::None, is_ref),
@@ -274,7 +284,7 @@ impl PyWriter {
 
                 match reference {
                     None => {
-                        panic!("Reference not found in references list");
+                        panic!("Reference {} not found in references list", index);
                     }
                     Some(reference) => {
                         self.w_object(Some((*reference).clone()), true);
@@ -282,6 +292,8 @@ impl PyWriter {
                 }
             }
         };
+
+        self.depth -= 1;
     }
 
     pub fn write_object(&mut self, obj: Option<Object>) -> Vec<u8> {

@@ -19,6 +19,7 @@ use num_derive::{FromPrimitive, ToPrimitive};
 use optimizer::{get_used_references, ReferenceOptimizer, Transformable};
 use ordered_float::OrderedFloat;
 use reader::PyReader;
+use resolver::get_recursive_refs;
 use std::io::{Read, Write};
 use writer::PyWriter;
 
@@ -307,7 +308,7 @@ pub fn optimize_references(object: Object, references: Vec<Object>) -> (Object, 
 
     object.transform(&mut optimizer);
 
-    (object, optimizer.references)
+    (object, optimizer.new_references)
 }
 
 pub fn load_bytes(data: &[u8], python_version: PyVersion) -> Result<(Object, Vec<Object>), Error> {
@@ -388,6 +389,7 @@ pub fn dump_bytes(
 mod tests {
     use std::collections::{HashMap, HashSet};
     use std::io::Write;
+    use std::vec;
 
     use tempfile::NamedTempFile;
 
@@ -591,6 +593,28 @@ mod tests {
                 Object::Long(BigInt::from(1)),
                 Object::Long(BigInt::from(1))
             ]
+        );
+
+        assert_eq!(refs.len(), 0);
+
+        let kind = Object::StoreRef(0);
+        let refs = vec![
+            Object::List(vec![Object::StoreRef(1).into(), Object::LoadRef(1).into()]).into(),
+            Object::StoreRef(2),
+            Object::Long(BigInt::from(1)).into(),
+        ];
+
+        let (kind, refs) = resolve_all_refs(kind, refs).unwrap();
+
+        assert_eq!(
+            kind,
+            Object::List(
+                vec![
+                    Object::Long(BigInt::from(1)).into(),
+                    Object::Long(BigInt::from(1)).into()
+                ]
+                .into()
+            )
         );
 
         assert_eq!(refs.len(), 0);
@@ -1035,7 +1059,7 @@ mod tests {
 
         let (kind, refs) = optimize_references(kind, refs);
 
-        dbg!(dump_bytes(kind.clone(), Some(refs.clone()), (3, 10).into(), 4).unwrap());
+        dump_bytes(kind.clone(), Some(refs.clone()), (3, 10).into(), 4).unwrap();
 
         assert_eq!(
             kind,
@@ -1047,6 +1071,24 @@ mod tests {
                 ]
                 .into()
             )
+        );
+
+        assert_eq!(*refs.get(0).unwrap(), Object::Long(BigInt::from(1)).into());
+
+        let kind = Object::StoreRef(0);
+        let refs = vec![
+            Object::List(vec![Object::StoreRef(1).into(), Object::LoadRef(1).into()]).into(),
+            Object::StoreRef(2),
+            Object::Long(BigInt::from(1)).into(),
+        ];
+
+        let (kind, refs) = optimize_references(kind, refs);
+
+        dump_bytes(kind.clone(), Some(refs.clone()), (3, 10).into(), 4).unwrap();
+
+        assert_eq!(
+            kind,
+            Object::List(vec![Object::StoreRef(0).into(), Object::LoadRef(0).into(),].into())
         );
 
         assert_eq!(*refs.get(0).unwrap(), Object::Long(BigInt::from(1)).into());

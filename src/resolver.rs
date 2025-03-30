@@ -1,5 +1,7 @@
 use crate::{
+    dump_bytes,
     error::Error,
+    magic::PyVersion,
     optimize_references,
     optimizer::{Transformable, Transformer},
     Object, ObjectHashable,
@@ -126,7 +128,10 @@ impl Transformer for Resolver {
     fn visit_HashableLoadRef(&mut self, obj: &mut ObjectHashable) -> Option<ObjectHashable> {
         if let ObjectHashable::LoadRef(index) = obj {
             if !self.recursive_refs.contains(index) {
-                Some(self.references[*index].clone().try_into().unwrap())
+                Some(
+                    ObjectHashable::from_ref(self.references[*index].clone(), &self.references)
+                        .unwrap(),
+                )
             } else {
                 None
             }
@@ -163,16 +168,18 @@ pub fn resolve_all_refs(
     obj: Object,
     references: Vec<Object>,
 ) -> Result<(Object, Vec<Object>), Error> {
+    let (optimized_obj, optimized_refs) = optimize_references(obj, references); // Remove all unused references
+
     // Resolve all non-recursively stored references
-    let recursive_refs = get_recursive_refs(obj.clone(), references.clone())?;
+    let recursive_refs = get_recursive_refs(optimized_obj.clone(), optimized_refs.clone())?;
 
-    let mut resolver = Resolver::new(references.clone(), recursive_refs);
+    let mut resolver = Resolver::new(optimized_refs.clone(), recursive_refs);
 
-    let mut obj = obj.clone();
+    let mut obj = optimized_obj.clone();
 
     obj.transform(&mut resolver);
 
-    let (obj, resolved_refs) = optimize_references(obj, resolver.references);
+    let (obj, resolved_refs) = optimize_references(obj, resolver.references); // Clean up leftover references
 
     Ok((obj, resolved_refs))
 }

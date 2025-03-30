@@ -11,6 +11,7 @@ bitflags = "2.8.0"
 bstr = "1.11.3"
 hashable = "0.0.0"
 indexmap = "2.7.1"
+log = "0.4.25"
 num-bigint = "0.4.6"
 num-complex = "0.4.6"
 num-derive = "0.4.2"
@@ -22,6 +23,8 @@ tempfile = "3.15.0"
 reqwest = { version = "0.12.12", features = ["blocking"] }
 zip = "2.2.2"
 cmd_lib = "1.9.5"
+env_logger = "0.11.6"
+rayon = "1.10.0"
 
 # Enable max optimizations for dependencies, but not for our code:
 [profile.dev.package."*"]

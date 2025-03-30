@@ -1,7 +1,12 @@
+use rayon::prelude::*;
 use std::io::BufReader;
 
 use num_traits::FromPrimitive;
-use python_marshal::{dump_bytes, optimize_references, Kind};
+use python_marshal::{
+    dump_bytes, optimize_references,
+    resolver::{get_recursive_refs, resolve_all_refs},
+    Kind,
+};
 
 mod common;
 
@@ -24,12 +29,13 @@ fn diff_bytearrays(a: &[u8], b: &[u8]) -> Vec<(usize, u8, u8)> {
 #[test]
 fn test_recompile_standard_lib() {
     common::setup();
+    env_logger::init();
 
-    for version in common::PYTHON_VERSIONS {
+    common::PYTHON_VERSIONS.par_iter().for_each(|version| {
         println!("Testing with Python version: {}", version);
         let pyc_files = common::find_pyc_files(version);
 
-        for pyc_file in pyc_files {
+        pyc_files.par_iter().for_each(|pyc_file| {
             delete_debug_files();
             println!("Testing pyc file: {:?}", pyc_file);
             let file = std::fs::File::open(&pyc_file).expect("Failed to open pyc file");
@@ -38,10 +44,19 @@ fn test_recompile_standard_lib() {
             let code = python_marshal::load_pyc(&mut reader).expect("Failed to read pyc file");
             let original = std::fs::read(&pyc_file).expect("Failed to read pyc file");
 
-            // let (temp_obj, temp_refs) =
-            //     optimize_references(code.clone().object, code.clone().references); // Make sure this doesn't panic
-            // dump_bytes(temp_obj, Some(temp_refs), code.python_version, 4)
-            //     .expect("Failed to dump bytes");
+            let (temp_obj, temp_refs) =
+                optimize_references(code.clone().object, code.clone().references); // Make sure this doesn't panic
+
+            dump_bytes(temp_obj, Some(temp_refs), code.python_version, 4)
+                .expect("Failed to dump bytes");
+
+            let (temp_obj, temp_refs) =
+                resolve_all_refs(code.clone().object, code.clone().references).unwrap(); // Make sure this doesn't panic
+
+            assert_eq!(temp_refs.len(), 0);
+
+            dump_bytes(temp_obj, Some(temp_refs), code.python_version, 4)
+                .expect("Failed to dump bytes");
 
             let mut dumped = Vec::new();
 
@@ -95,6 +110,6 @@ fn test_recompile_standard_lib() {
                         assert!(false, "bytearrays differ at index {}", i);
                     });
             }
-        }
-    }
+        });
+    });
 }
