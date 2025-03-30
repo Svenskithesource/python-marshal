@@ -2,11 +2,7 @@ use rayon::prelude::*;
 use std::io::BufReader;
 
 use num_traits::FromPrimitive;
-use python_marshal::{
-    dump_bytes, optimize_references,
-    resolver::{get_recursive_refs, resolve_all_refs},
-    Kind,
-};
+use python_marshal::{dump_bytes, optimize_references, resolver::resolve_all_refs, Kind};
 
 mod common;
 
