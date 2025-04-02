@@ -1345,7 +1345,7 @@ dependencies = [
 
 [[package]]
 name = "python_marshal"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "bitflags 2.9.0",
  "bstr",

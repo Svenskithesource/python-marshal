@@ -15,9 +15,9 @@ impl PyVersion {
     }
 }
 
-impl Into<String> for PyVersion {
-    fn into(self) -> String {
-        format!("{}.{}.{}", self.major, self.minor, self.patch)
+impl From<PyVersion> for String {
+    fn from(vers: PyVersion) -> Self {
+        format!("{}.{}.{}", vers.major, vers.minor, vers.patch)
     }
 }
 
@@ -168,9 +168,9 @@ impl PyVersion {
     pub fn to_magic(&self) -> Result<u32, crate::Error> {
         Self::MAGIC_NUMBERS
             .iter()
-            .find(|&&(_, ref version)| version == self)
+            .find(|&(_, version)| version == self)
             .map(|&(num, _)| num)
-            .ok_or(crate::Error::UnsupportedPyVersion(self.clone()))
+            .ok_or(crate::Error::UnsupportedPyVersion(*self))
     }
 }
 

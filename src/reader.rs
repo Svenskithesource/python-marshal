@@ -23,7 +23,7 @@ macro_rules! extract_object {
         match $self.ok_or_else(|| $err) {
             Ok(val) => match val {
                 $variant => Ok($binding),
-                x => Err(crate::error::Error::InvalidObject(x)),
+                x => Err($crate::error::Error::InvalidObject(x)),
             },
             Err(e) => Err(e),
         }
@@ -34,14 +34,14 @@ macro_rules! extract_object {
 macro_rules! resolve_object_ref {
     // Gets the object from the reference table by index
     ($self:expr, $refs:expr) => {
-        match $self.ok_or_else(|| crate::error::Error::UnexpectedNull) {
+        match $self.ok_or_else(|| $crate::error::Error::UnexpectedNull) {
             Ok(val) => match val {
                 Object::LoadRef(index) | Object::StoreRef(index) => {
                     let reference = $refs.get(index);
 
                     match reference {
                         Some(obj) => Ok((*obj).clone()),
-                        None => Err(crate::error::Error::InvalidReference),
+                        None => Err($crate::error::Error::InvalidReference),
                     }
                 }
                 x => Ok(x),
@@ -56,7 +56,7 @@ macro_rules! extract_strings_tuple {
     ($objs:expr, $refs:expr) => {
         $objs
             .iter()
-            .map(|o| match resolve_object_ref!(Some((**o).clone()), $refs)? {
+            .map(|o| match resolve_object_ref!(Some((*o).clone()), $refs)? {
                 Object::String(string) => Ok(string.clone()),
                 _ => Err(Error::UnexpectedObject),
             })
@@ -69,7 +69,7 @@ macro_rules! extract_strings_list {
     ($objs:expr) => {
         $objs
             .iter()
-            .map(|o| match o.as_ref() {
+            .map(|o| match o {
                 Object::String(string) => Ok(string.clone()),
                 _ => Err(Error::UnexpectedObject),
             })
@@ -108,7 +108,7 @@ macro_rules! extract_strings_dict {
     ($objs:expr) => {
         $objs
             .iter()
-            .map(|(k, v)| match (k, v.as_ref()) {
+            .map(|(k, v)| match (k, v) {
                 (ObjectHashable::String(key), Object::String(value)) => {
                     Ok((key.clone(), value.clone()))
                 }
@@ -179,28 +179,27 @@ impl PyReader {
         Ok(value)
     }
 
-    fn r_vec(&mut self, length: usize, kind: Kind) -> Result<Vec<Box<Object>>, Error> {
+    fn r_vec(&mut self, length: usize, kind: Kind) -> Result<Vec<Object>, Error> {
         let mut vec = Vec::with_capacity(length);
 
         for _ in 0..length {
             let obj = self.r_object()?;
 
-            if obj.is_none() {
-                return Err(match kind {
+            match obj {
+                Some(obj) => vec.push(obj),
+                None => Err(match kind {
                     Kind::Tuple => Error::NullInTuple,
                     Kind::List => Error::NullInList,
                     Kind::Set => Error::NullInSet,
                     _ => Error::InvalidKind(kind),
-                });
+                })?,
             }
-
-            vec.push(obj.unwrap().into());
         }
 
         Ok(vec)
     }
 
-    fn r_hashmap(&mut self) -> Result<IndexMap<ObjectHashable, Box<Object>>, Error> {
+    fn r_hashmap(&mut self) -> Result<IndexMap<ObjectHashable, Object>, Error> {
         let mut map = IndexMap::new();
 
         loop {
@@ -209,7 +208,7 @@ impl PyReader {
                 Some(key) => match self.r_object()? {
                     None => break,
                     Some(value) => {
-                        map.insert(ObjectHashable::try_from(key)?, value.into());
+                        map.insert(ObjectHashable::try_from(key)?, value);
                     }
                 },
             }
@@ -227,7 +226,7 @@ impl PyReader {
 
         let flag = (code & Kind::FlagRef as u8) != 0;
 
-        let obj_kind = Kind::from_u8(code & !(Kind::FlagRef as u8)).unwrap();
+        let obj_kind = Kind::from_u8(code & !(Kind::FlagRef as u8)).ok_or(Error::UnreadableKind)?;
 
         let mut idx: Option<usize> = match obj_kind {
             Kind::SmallTuple
@@ -252,12 +251,12 @@ impl PyReader {
             Kind::False => Some(Object::Bool(false)),
             Kind::True => Some(Object::Bool(true)),
             Kind::Int => {
-                let value = Object::Long(BigInt::from(self.r_long()?).into());
+                let value = Object::Long(BigInt::from(self.r_long()?));
 
                 Some(value)
             }
             Kind::Int64 => {
-                let value = Object::Long(BigInt::from(self.r_long64()?).into());
+                let value = Object::Long(BigInt::from(self.r_long64()?));
 
                 Some(value)
             }
@@ -289,7 +288,7 @@ impl PyReader {
                     number,
                 );
 
-                let value = Object::Long(signed.into());
+                let value = Object::Long(signed);
 
                 Some(value)
             }
@@ -319,7 +318,7 @@ impl PyReader {
             }
             Kind::String => {
                 let length = self.r_long()?;
-                let value = Object::Bytes(self.r_bytes(length as usize)?.into());
+                let value = Object::Bytes(self.r_bytes(length as usize)?);
 
                 Some(value)
             }
@@ -339,13 +338,13 @@ impl PyReader {
             }
             Kind::Tuple => {
                 let length = self.r_long()?;
-                let value = Object::Tuple(self.r_vec(length as usize, Kind::Tuple)?.into());
+                let value = Object::Tuple(self.r_vec(length as usize, Kind::Tuple)?);
 
                 Some(value)
             }
             Kind::SmallTuple => {
                 let length = self.r_u8()?;
-                let value = Object::Tuple(self.r_vec(length as usize, Kind::Tuple)?.into());
+                let value = Object::Tuple(self.r_vec(length as usize, Kind::Tuple)?);
 
                 Some(value)
             }
@@ -354,9 +353,7 @@ impl PyReader {
                 let value = Object::List(
                     self.r_vec(length as usize, Kind::List)?
                         .into_iter()
-                        .map(|o| o.into())
-                        .collect::<Vec<_>>()
-                        .into(),
+                        .collect::<Vec<_>>(),
                 );
 
                 Some(value)
@@ -372,7 +369,7 @@ impl PyReader {
                     .r_vec(length as usize, Kind::Set)?
                     .into_iter()
                     .map(
-                        |o| match ObjectHashable::from_ref((*o).clone(), &self.references) {
+                        |o| match ObjectHashable::from_ref(o.clone(), &self.references) {
                             Ok(obj) => Ok(obj),
                             Err(_) => Err(Error::UnexpectedObject),
                         },
@@ -383,7 +380,7 @@ impl PyReader {
 
                 if flag {
                     idx = Some(self.references.len());
-                    self.set_reference(idx.unwrap(), value.clone());
+                    self.set_reference(idx.ok_or(Error::InvalidReference)?, value.clone());
                 }
 
                 Some(value)
@@ -394,14 +391,13 @@ impl PyReader {
                     self.r_vec(length as usize, Kind::FrozenSet)?
                         .into_iter()
                         .map(
-                            |o| match ObjectHashable::from_ref((*o).clone(), &self.references) {
+                            |o| match ObjectHashable::from_ref(o.clone(), &self.references) {
                                 Ok(obj) => Ok(obj),
                                 Err(_) => Err(Error::UnexpectedObject),
                             },
                         )
                         .collect::<Result<IndexSet<_>, _>>()?,
-                )
-                .into();
+                );
 
                 Some(value)
             }
@@ -418,58 +414,35 @@ impl PyReader {
                         let nlocals = self.r_long()?;
                         let stacksize = self.r_long()?;
                         let flags = CodeFlags::from_bits_retain(self.r_long()? as u32);
-                        let code = self
-                            .r_object()?
-                            .ok_or_else(|| Error::UnexpectedNull)?
-                            .into();
-                        let consts = self
-                            .r_object()?
-                            .ok_or_else(|| Error::UnexpectedNull)?
-                            .into();
-                        let names = self
-                            .r_object()?
-                            .ok_or_else(|| Error::UnexpectedNull)?
-                            .into();
+                        let code = self.r_object()?.ok_or(Error::UnexpectedNull)?.into();
+                        let consts = self.r_object()?.ok_or(Error::UnexpectedNull)?.into();
+                        let names = self.r_object()?.ok_or(Error::UnexpectedNull)?.into();
 
-                        let varnames = self
-                            .r_object()?
-                            .ok_or_else(|| Error::UnexpectedNull)?
-                            .into();
+                        let varnames = self.r_object()?.ok_or(Error::UnexpectedNull)?.into();
 
-                        let freevars = self
-                            .r_object()?
-                            .ok_or_else(|| Error::UnexpectedNull)?
-                            .into();
+                        let freevars = self.r_object()?.ok_or(Error::UnexpectedNull)?.into();
 
-                        let cellvars = self
-                            .r_object()?
-                            .ok_or_else(|| Error::UnexpectedNull)?
-                            .into();
+                        let cellvars = self.r_object()?.ok_or(Error::UnexpectedNull)?.into();
 
-                        let filename = self
-                            .r_object()?
-                            .ok_or_else(|| Error::UnexpectedNull)?
-                            .into();
+                        let filename = self.r_object()?.ok_or(Error::UnexpectedNull)?.into();
 
-                        let name = self
-                            .r_object()?
-                            .ok_or_else(|| Error::UnexpectedNull)?
-                            .into();
+                        let name = self.r_object()?.ok_or(Error::UnexpectedNull)?.into();
 
                         let firstlineno = self.r_long()?;
 
-                        let lnotab = self
-                            .r_object()?
-                            .ok_or_else(|| Error::UnexpectedNull)?
-                            .into();
+                        let lnotab = self.r_object()?.ok_or(Error::UnexpectedNull)?.into();
 
                         Object::Code(
                             Code::V310(code_objects::Code310::new(
-                                argcount.try_into().unwrap(),
-                                posonlyargcount.try_into().unwrap(),
-                                kwonlyargcount.try_into().unwrap(),
-                                nlocals.try_into().unwrap(),
-                                stacksize.try_into().unwrap(),
+                                argcount.try_into().map_err(|_| Error::InvalidConversion)?,
+                                posonlyargcount
+                                    .try_into()
+                                    .map_err(|_| Error::InvalidConversion)?,
+                                kwonlyargcount
+                                    .try_into()
+                                    .map_err(|_| Error::InvalidConversion)?,
+                                nlocals.try_into().map_err(|_| Error::InvalidConversion)?,
+                                stacksize.try_into().map_err(|_| Error::InvalidConversion)?,
                                 flags,
                                 code,
                                 consts,
@@ -479,7 +452,9 @@ impl PyReader {
                                 cellvars,
                                 filename,
                                 name,
-                                firstlineno.try_into().unwrap(),
+                                firstlineno
+                                    .try_into()
+                                    .map_err(|_| Error::InvalidConversion)?,
                                 lnotab,
                                 &self.references,
                             )?)
@@ -506,54 +481,28 @@ impl PyReader {
                         let kwonlyargcount = self.r_long()?;
                         let stacksize = self.r_long()?;
                         let flags = CodeFlags::from_bits_retain(self.r_long()? as u32);
-                        let code = self
-                            .r_object()?
-                            .ok_or_else(|| Error::UnexpectedNull)?
-                            .into();
-                        let consts = self
-                            .r_object()?
-                            .ok_or_else(|| Error::UnexpectedNull)?
-                            .into();
-                        let names = self
-                            .r_object()?
-                            .ok_or_else(|| Error::UnexpectedNull)?
-                            .into();
-                        let localsplusnames = self
-                            .r_object()?
-                            .ok_or_else(|| Error::UnexpectedNull)?
-                            .into();
-                        let localspluskinds = self
-                            .r_object()?
-                            .ok_or_else(|| Error::UnexpectedNull)?
-                            .into();
-                        let filename = self
-                            .r_object()?
-                            .ok_or_else(|| Error::UnexpectedNull)?
-                            .into();
-                        let name = self
-                            .r_object()?
-                            .ok_or_else(|| Error::UnexpectedNull)?
-                            .into();
-                        let qualname = self
-                            .r_object()?
-                            .ok_or_else(|| Error::UnexpectedNull)?
-                            .into();
+                        let code = self.r_object()?.ok_or(Error::UnexpectedNull)?.into();
+                        let consts = self.r_object()?.ok_or(Error::UnexpectedNull)?.into();
+                        let names = self.r_object()?.ok_or(Error::UnexpectedNull)?.into();
+                        let localsplusnames = self.r_object()?.ok_or(Error::UnexpectedNull)?.into();
+                        let localspluskinds = self.r_object()?.ok_or(Error::UnexpectedNull)?.into();
+                        let filename = self.r_object()?.ok_or(Error::UnexpectedNull)?.into();
+                        let name = self.r_object()?.ok_or(Error::UnexpectedNull)?.into();
+                        let qualname = self.r_object()?.ok_or(Error::UnexpectedNull)?.into();
                         let firstlineno = self.r_long()?;
-                        let linetable = self
-                            .r_object()?
-                            .ok_or_else(|| Error::UnexpectedNull)?
-                            .into();
-                        let exceptiontable = self
-                            .r_object()?
-                            .ok_or_else(|| Error::UnexpectedNull)?
-                            .into();
+                        let linetable = self.r_object()?.ok_or(Error::UnexpectedNull)?.into();
+                        let exceptiontable = self.r_object()?.ok_or(Error::UnexpectedNull)?.into();
 
                         Object::Code(
                             Code::V311(code_objects::Code311::new(
-                                argcount.try_into().unwrap(),
-                                posonlyargcount.try_into().unwrap(),
-                                kwonlyargcount.try_into().unwrap(),
-                                stacksize.try_into().unwrap(),
+                                argcount.try_into().map_err(|_| Error::InvalidConversion)?,
+                                posonlyargcount
+                                    .try_into()
+                                    .map_err(|_| Error::InvalidConversion)?,
+                                kwonlyargcount
+                                    .try_into()
+                                    .map_err(|_| Error::InvalidConversion)?,
+                                stacksize.try_into().map_err(|_| Error::InvalidConversion)?,
                                 flags,
                                 code,
                                 consts,
@@ -563,7 +512,9 @@ impl PyReader {
                                 filename,
                                 name,
                                 qualname,
-                                firstlineno.try_into().unwrap(),
+                                firstlineno
+                                    .try_into()
+                                    .map_err(|_| Error::InvalidConversion)?,
                                 linetable,
                                 exceptiontable,
                                 &self.references,
@@ -601,18 +552,18 @@ impl PyReader {
             | (Some(Object::LoadRef(_)), _) => {}
             (Some(x), Some(i)) if flag => {
                 idx = Some(i);
-                self.set_reference(i, x.clone().into());
+                self.set_reference(i, x.clone());
             }
             (Some(x), None) if flag => {
                 idx = Some(self.references.len());
 
-                self.references.push(x.clone().into());
+                self.references.push(x.clone());
             }
             (Some(_), _) => {}
         };
 
         match flag {
-            true => Ok(Some(Object::StoreRef(idx.unwrap()))),
+            true => Ok(Some(Object::StoreRef(idx.ok_or(Error::InvalidReference)?))),
             false => Ok(obj),
         }
     }
@@ -624,6 +575,6 @@ impl PyReader {
 
         let object = self.r_object()?;
 
-        Ok(object.unwrap())
+        object.ok_or(Error::UnexpectedObject)
     }
 }

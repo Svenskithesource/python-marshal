@@ -9,6 +9,9 @@ use crate::{magic::PyVersion, Kind, Object};
 #[allow(dead_code)]
 pub enum Error {
     UnsupportedPyVersion(PyVersion),
+    NoMagicNumber,
+    NoTimeStamp,
+    NoHash,
     UnsupportedMagicNumber(u32),
     DigitOutOfRange(u16),
     UnnormalizedLong,
@@ -16,6 +19,8 @@ pub enum Error {
     NullInList,
     NullInSet,
     NullInDict,
+    UnreadableKind,
+    InvalidConversion,
     InvalidKind(Kind),
     InvalidObject(Object),
     InvalidData(std::io::Error),
@@ -34,6 +39,9 @@ impl Display for Error {
                 "unsupported Python version: {}.{}",
                 vers.major, vers.minor
             ),
+            Error::NoMagicNumber => write!(f, "no magic number found"),
+            Error::NoTimeStamp => write!(f, "no timestamp found"),
+            Error::NoHash => write!(f, "no hash found"),
             Error::UnsupportedMagicNumber(magic) => {
                 write!(f, "unsupported magic number: 0x{:08X}", magic)
             }
@@ -47,6 +55,8 @@ impl Display for Error {
             Error::NullInList => write!(f, "NULL object in marshal data for list"),
             Error::NullInSet => write!(f, "NULL object in marshal data for set"),
             Error::NullInDict => write!(f, "NULL object in marshal data for dict"),
+            Error::UnreadableKind => write!(f, "bad marshal data (unreadable kind)"),
+            Error::InvalidConversion => write!(f, "bad marshal data (invalid conversion)"),
             Error::InvalidKind(kind) => write!(f, "invalid kind: {:?}", kind),
             Error::InvalidObject(obj) => write!(f, "invalid object: {:?}", obj),
             Error::InvalidData(err) => write!(f, "bad marshal data: {:?}", err),

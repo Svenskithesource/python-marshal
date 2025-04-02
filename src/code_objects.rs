@@ -39,7 +39,7 @@ impl Code310 {
         name: Box<Object>,
         firstlineno: u32,
         lnotab: Box<Object>,
-        references: &Vec<Object>,
+        references: &[Object],
     ) -> Result<Self, Error> {
         // Ensure all corresponding values are of the correct type
         extract_object!(Some(resolve_object_ref!(Some((*code).clone()), references)?), Object::Bytes(bytes) => bytes, Error::NullInTuple)?;
@@ -125,7 +125,7 @@ impl Code311 {
         firstlineno: u32,
         linetable: Box<Object>,
         exceptiontable: Box<Object>,
-        references: &Vec<Object>,
+        references: &[Object],
     ) -> Result<Self, Error> {
         // Ensure all corresponding values are of the correct type
         extract_object!(Some(resolve_object_ref!(Some((*code).clone()), references)?), Object::Bytes(bytes) => bytes, Error::NullInTuple)?;

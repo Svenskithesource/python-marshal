@@ -126,10 +126,7 @@ impl Transformer for Resolver {
     fn visit_HashableLoadRef(&mut self, obj: &mut ObjectHashable) -> Option<ObjectHashable> {
         if let ObjectHashable::LoadRef(index) = obj {
             if !self.recursive_refs.contains(index) {
-                Some(
-                    ObjectHashable::from_ref(self.references[*index].clone(), &self.references)
-                        .unwrap(),
-                )
+                ObjectHashable::from_ref(self.references[*index].clone(), &self.references).ok()
             } else {
                 None
             }

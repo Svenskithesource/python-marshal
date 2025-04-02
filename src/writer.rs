@@ -3,7 +3,7 @@ use num_bigint::BigInt;
 use num_complex::Complex;
 use num_traits::{Signed, ToPrimitive};
 
-use crate::{Code, Kind, Object};
+use crate::{error::Error, Code, Kind, Object};
 
 const DEPTH_LIMIT: usize = 1000;
 
@@ -44,12 +44,16 @@ impl PyWriter {
     }
 
     #[allow(non_snake_case)]
-    fn w_PyLong(&mut self, num: BigInt) {
+    fn w_PyLong(&mut self, num: BigInt) -> Result<(), Error> {
         let mut value = num.clone().abs();
         let mut digits: Vec<u16> = vec![];
 
         while value > BigInt::ZERO {
-            digits.push((&value & BigInt::from(0x7FFF)).to_u16().unwrap());
+            digits.push(
+                (&value & BigInt::from(0x7FFF))
+                    .to_u16()
+                    .ok_or(Error::InvalidConversion)?,
+            );
 
             value >>= 15;
         }
@@ -59,6 +63,8 @@ impl PyWriter {
         for digit in digits {
             self.w_u16(digit);
         }
+
+        Ok(())
     }
 
     fn w_string(&mut self, value: &BString, as_u8: bool) {
@@ -69,7 +75,7 @@ impl PyWriter {
         }
 
         self.data
-            .extend_from_slice(&value.iter().map(|&x| x).collect::<Vec<u8>>());
+            .extend_from_slice(&value.iter().copied().collect::<Vec<u8>>());
     }
 
     fn w_float_bin(&mut self, value: f64) {
@@ -80,11 +86,11 @@ impl PyWriter {
         self.w_string(&value.to_string().into(), true);
     }
 
-    fn w_bytes(&mut self, value: &Vec<u8>) {
+    fn w_bytes(&mut self, value: &[u8]) {
         self.data.extend_from_slice(value);
     }
 
-    fn w_object(&mut self, obj: Option<Object>, is_ref: bool) {
+    fn w_object(&mut self, obj: Option<Object>, is_ref: bool) -> Result<(), Error> {
         self.depth += 1;
 
         if self.depth > DEPTH_LIMIT {
@@ -112,10 +118,10 @@ impl PyWriter {
                 let num = num.clone();
                 if num >= BigInt::from(i32::MIN) && num <= BigInt::from(i32::MAX) {
                     self.w_kind(Kind::Int, is_ref);
-                    self.w_long(num.to_i32().unwrap());
+                    self.w_long(num.to_i32().ok_or(Error::InvalidConversion)?);
                 } else {
                     self.w_kind(Kind::Long, is_ref);
-                    self.w_PyLong(num);
+                    self.w_PyLong(num)?;
                 }
             }
             Some(Object::Float(value)) => {
@@ -150,12 +156,12 @@ impl PyWriter {
                     Kind::ASCII | Kind::ASCIIInterned | Kind::Interned => {
                         self.w_kind(value.kind, is_ref);
                         self.w_long(str_value.len() as i32);
-                        self.w_bytes(&str_value.iter().map(|&x| x).collect::<Vec<u8>>());
+                        self.w_bytes(&str_value.iter().copied().collect::<Vec<u8>>());
                     }
                     Kind::ShortAscii | Kind::ShortAsciiInterned => {
                         self.w_kind(value.kind, is_ref);
                         self.w_u8(str_value.len() as u8);
-                        self.w_bytes(&str_value.iter().map(|&x| x).collect::<Vec<u8>>());
+                        self.w_bytes(&str_value.iter().copied().collect::<Vec<u8>>());
                     }
                     Kind::Unicode => {
                         self.w_kind(Kind::Unicode, is_ref);
@@ -178,7 +184,7 @@ impl PyWriter {
                 }
 
                 for item in value.iter() {
-                    self.w_object(Some((**item).clone()), false);
+                    self.w_object(Some((*item).clone()), false)?;
                 }
             }
             Some(Object::List(value)) => {
@@ -188,14 +194,14 @@ impl PyWriter {
                 self.w_long(size as i32);
 
                 for item in value.iter() {
-                    self.w_object(Some((*item.clone()).clone()), false);
+                    self.w_object(Some(item.clone().clone()), false)?;
                 }
             }
             Some(Object::Dict(value)) => {
                 self.w_kind(Kind::Dict, is_ref);
                 for (key, value) in value.iter() {
-                    self.w_object(Some((*key).clone().into()), false);
-                    self.w_object(Some((**value).clone()).into(), false);
+                    self.w_object(Some((*key).clone().into()), false)?;
+                    self.w_object(Some((*value).clone()), false)?;
                 }
 
                 self.w_kind(Kind::Null, is_ref); // NULL object terminated
@@ -207,7 +213,7 @@ impl PyWriter {
                 self.w_long(size as i32);
 
                 for item in value.iter() {
-                    self.w_object(Some((*item).clone().into()), false);
+                    self.w_object(Some((*item).clone().into()), false)?;
                 }
             }
             Some(Object::FrozenSet(value)) => {
@@ -217,7 +223,7 @@ impl PyWriter {
                 self.w_long(size as i32);
 
                 for item in value.iter() {
-                    self.w_object(Some((*item).clone().into()), false);
+                    self.w_object(Some((*item).clone().into()), false)?;
                 }
             }
             Some(Object::Code(value)) => {
@@ -227,42 +233,78 @@ impl PyWriter {
                     Code::V310(value) => {
                         // https://github.com/python/cpython/blob/3.10/Python/marshal.c#L511
                         self.w_kind(Kind::Code, is_ref);
-                        self.w_long(value.argcount.try_into().unwrap());
-                        self.w_long(value.posonlyargcount.try_into().unwrap());
-                        self.w_long(value.kwonlyargcount.try_into().unwrap());
-                        self.w_long(value.nlocals.try_into().unwrap());
-                        self.w_long(value.stacksize.try_into().unwrap());
-                        self.w_long(value.flags.bits().try_into().unwrap());
-                        self.w_object(Some((*value.code).clone()), false);
-                        self.w_object(Some((*value.consts).clone()), false);
-                        self.w_object(Some((*value.names).clone()), false);
-                        self.w_object(Some((*value.varnames).clone()), false);
-                        self.w_object(Some((*value.freevars).clone()), false);
-                        self.w_object(Some((*value.cellvars).clone()), false);
-                        self.w_object(Some((*value.filename).clone()), false);
-                        self.w_object(Some((*value.name).clone()), false);
-                        self.w_long(value.firstlineno.try_into().unwrap());
-                        self.w_object(Some((*value.lnotab).clone()), false);
+                        self.w_long(
+                            value
+                                .argcount
+                                .try_into()
+                                .map_err(|_| Error::InvalidConversion)?,
+                        );
+                        self.w_long(
+                            value
+                                .posonlyargcount
+                                .try_into()
+                                .map_err(|_| Error::InvalidConversion)?,
+                        );
+                        self.w_long(
+                            value
+                                .kwonlyargcount
+                                .try_into()
+                                .map_err(|_| Error::InvalidConversion)?,
+                        );
+                        self.w_long(
+                            value
+                                .nlocals
+                                .try_into()
+                                .map_err(|_| Error::InvalidConversion)?,
+                        );
+                        self.w_long(
+                            value
+                                .stacksize
+                                .try_into()
+                                .map_err(|_| Error::InvalidConversion)?,
+                        );
+                        self.w_long(
+                            value
+                                .flags
+                                .bits()
+                                .try_into()
+                                .map_err(|_| Error::InvalidConversion)?,
+                        );
+                        self.w_object(Some((*value.code).clone()), false)?;
+                        self.w_object(Some((*value.consts).clone()), false)?;
+                        self.w_object(Some((*value.names).clone()), false)?;
+                        self.w_object(Some((*value.varnames).clone()), false)?;
+                        self.w_object(Some((*value.freevars).clone()), false)?;
+                        self.w_object(Some((*value.cellvars).clone()), false)?;
+                        self.w_object(Some((*value.filename).clone()), false)?;
+                        self.w_object(Some((*value.name).clone()), false)?;
+                        self.w_long(
+                            value
+                                .firstlineno
+                                .try_into()
+                                .map_err(|_| Error::InvalidConversion)?,
+                        );
+                        self.w_object(Some((*value.lnotab).clone()), false)?;
                     }
                     Code::V311(value) | Code::V312(value) | Code::V313(value) => {
                         // https://github.com/python/cpython/blob/3.11/Python/marshal.c#L558
                         self.w_kind(Kind::Code, is_ref);
-                        self.w_long(value.argcount.try_into().unwrap());
-                        self.w_long(value.posonlyargcount.try_into().unwrap());
-                        self.w_long(value.kwonlyargcount.try_into().unwrap());
-                        self.w_long(value.stacksize.try_into().unwrap());
-                        self.w_long(value.flags.bits().try_into().unwrap());
-                        self.w_object(Some((*value.code).clone()), false);
-                        self.w_object(Some((*value.consts).clone()), false);
-                        self.w_object(Some((*value.names).clone()), false);
-                        self.w_object(Some((*value.localsplusnames).clone()), false);
-                        self.w_object(Some((*value.localspluskinds).clone()), false);
-                        self.w_object(Some((*value.filename).clone()), false);
-                        self.w_object(Some((*value.name).clone()), false);
-                        self.w_object(Some((*value.qualname).clone()), false);
-                        self.w_long(value.firstlineno.try_into().unwrap());
-                        self.w_object(Some((*value.linetable).clone()), false);
-                        self.w_object(Some((*value.exceptiontable).clone()), false);
+                        self.w_long(value.argcount.try_into().map_err(|_| Error::InvalidConversion)?);
+                        self.w_long(value.posonlyargcount.try_into().map_err(|_| Error::InvalidConversion)?);
+                        self.w_long(value.kwonlyargcount.try_into().map_err(|_| Error::InvalidConversion)?);
+                        self.w_long(value.stacksize.try_into().map_err(|_| Error::InvalidConversion)?);
+                        self.w_long(value.flags.bits().try_into().map_err(|_| Error::InvalidConversion)?);
+                        self.w_object(Some((*value.code).clone()), false)?;
+                        self.w_object(Some((*value.consts).clone()), false)?;
+                        self.w_object(Some((*value.names).clone()), false)?;
+                        self.w_object(Some((*value.localsplusnames).clone()), false)?;
+                        self.w_object(Some((*value.localspluskinds).clone()), false)?;
+                        self.w_object(Some((*value.filename).clone()), false)?;
+                        self.w_object(Some((*value.name).clone()), false)?;
+                        self.w_object(Some((*value.qualname).clone()), false)?;
+                        self.w_long(value.firstlineno.try_into().map_err(|_| Error::InvalidConversion)?);
+                        self.w_object(Some((*value.linetable).clone()), false)?;
+                        self.w_object(Some((*value.exceptiontable).clone()), false)?;
                     }
                 }
             }
@@ -287,18 +329,20 @@ impl PyWriter {
                         panic!("Reference {} not found in references list", index);
                     }
                     Some(reference) => {
-                        self.w_object(Some((*reference).clone()), true);
+                        self.w_object(Some((*reference).clone()), true)?;
                     }
                 }
             }
         };
 
         self.depth -= 1;
+
+        Ok(())
     }
 
-    pub fn write_object(&mut self, obj: Option<Object>) -> Vec<u8> {
-        self.w_object(obj, false);
+    pub fn write_object(&mut self, obj: Option<Object>) -> Result<Vec<u8>, Error> {
+        self.w_object(obj, false)?;
 
-        self.data.clone()
+        Ok(self.data.clone())
     }
 }

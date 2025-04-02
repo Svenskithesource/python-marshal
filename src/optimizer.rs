@@ -99,7 +99,7 @@ pub trait Transformer: Sized {
     fn visit_Set(&mut self, obj: &mut Object) -> Option<Object> {
         if let Object::Set(set) = obj {
             for i in 0..set.len() {
-                let obj = set.get_index_mut2(i).unwrap();
+                let obj = set.get_index_mut2(i)?;
                 obj.transform(self);
             }
         }
@@ -110,7 +110,7 @@ pub trait Transformer: Sized {
     fn visit_FrozenSet(&mut self, obj: &mut Object) -> Option<Object> {
         if let Object::FrozenSet(set) = obj {
             for i in 0..set.len() {
-                let obj = set.get_index_mut2(i).unwrap();
+                let obj = set.get_index_mut2(i)?;
                 obj.transform(self);
             }
         }
@@ -287,7 +287,7 @@ impl ReferenceOptimizer {
 impl Transformer for ReferenceOptimizer {
     fn visit_LoadRef(&mut self, obj: &mut Object) -> Option<Object> {
         if let Object::LoadRef(index) = obj {
-            let new_index = self.reference_map.get(index).unwrap();
+            let new_index = self.reference_map.get(index)?;
 
             Some(Object::LoadRef(*new_index))
         } else {
@@ -297,7 +297,7 @@ impl Transformer for ReferenceOptimizer {
 
     fn visit_HashableLoadRef(&mut self, obj: &mut ObjectHashable) -> Option<ObjectHashable> {
         if let ObjectHashable::LoadRef(index) = obj {
-            let new_index = self.reference_map.get(index).unwrap();
+            let new_index = self.reference_map.get(index)?;
 
             Some(ObjectHashable::LoadRef(*new_index))
         } else {
@@ -308,7 +308,7 @@ impl Transformer for ReferenceOptimizer {
     fn visit_StoreRef(&mut self, obj: &mut Object) -> Option<Object> {
         if let Object::StoreRef(index) = obj {
             if self.references_used.contains(index) {
-                let mut obj = self.references.get(*index).unwrap().clone();
+                let mut obj = self.references.get(*index)?.clone();
                 obj.transform(self);
 
                 self.new_references.push(obj);
@@ -317,7 +317,7 @@ impl Transformer for ReferenceOptimizer {
 
                 Some(Object::StoreRef(new_index))
             } else {
-                let mut obj = self.references.get(*index).unwrap().clone();
+                let mut obj = self.references.get(*index)?.clone();
                 obj.transform(self);
 
                 Some(obj)
@@ -330,7 +330,7 @@ impl Transformer for ReferenceOptimizer {
     fn visit_HashableStoreRef(&mut self, obj: &mut ObjectHashable) -> Option<ObjectHashable> {
         if let ObjectHashable::StoreRef(index) = obj {
             if self.references_used.contains(index) {
-                let mut obj = self.references.get(*index).unwrap().clone();
+                let mut obj = self.references.get(*index)?.clone();
                 obj.transform(self);
 
                 self.new_references.push(obj);
@@ -339,10 +339,10 @@ impl Transformer for ReferenceOptimizer {
 
                 Some(ObjectHashable::StoreRef(new_index))
             } else {
-                let mut obj = self.references.get(*index).unwrap().clone();
+                let mut obj = self.references.get(*index)?.clone();
                 obj.transform(self);
 
-                Some(ObjectHashable::from_ref(obj, &self.new_references).unwrap())
+                ObjectHashable::from_ref(obj, &self.new_references).ok()
             }
         } else {
             None

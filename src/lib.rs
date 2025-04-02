@@ -167,9 +167,9 @@ pub enum Object {
     Complex   (Complex<f64>),
     Bytes     (Vec<u8>),
     String    (PyString),
-    Tuple     (Vec<Box<Object>>),
-    List      (Vec<Box<Object>>),
-    Dict      (IndexMap<ObjectHashable, Box<Object>>),
+    Tuple     (Vec<Object>),
+    List      (Vec<Object>),
+    Dict      (IndexMap<ObjectHashable, Object>),
     Set       (IndexSet<ObjectHashable>),
     FrozenSet (IndexSet<ObjectHashable>),
     Code      (Box<Code>),
@@ -217,8 +217,8 @@ impl ObjectHashable {
             Object::Tuple(t) => Ok(Self::Tuple(
                 // Tuple can contain references
                 t.iter()
-                    .map(|o| Self::from_ref((**o).clone(), references).unwrap())
-                    .collect::<Vec<_>>(),
+                    .map(|o| Self::from_ref((*o).clone(), references))
+                    .collect::<Result<Vec<_>, _>>()?,
             )),
             _ => Self::try_from(obj),
         }
@@ -244,9 +244,8 @@ impl TryFrom<Object> for ObjectHashable {
             Object::String(s) => Ok(ObjectHashable::String(s)),
             Object::Tuple(t) => Ok(ObjectHashable::Tuple(
                 t.iter()
-                    .map(|o| ObjectHashable::try_from((**o).clone()).unwrap())
-                    .collect::<Vec<_>>()
-                    .into(),
+                    .map(|o| ObjectHashable::try_from((*o).clone()))
+                    .collect::<Result<Vec<_>, _>>()?,
             )),
             Object::FrozenSet(s) => Ok(ObjectHashable::FrozenSet(
                 s.iter()
@@ -275,9 +274,8 @@ impl From<ObjectHashable> for Object {
             ObjectHashable::String(s) => Object::String(s),
             ObjectHashable::Tuple(t) => Object::Tuple(
                 t.iter()
-                    .map(|o| Box::new(Object::from((*o).clone())))
-                    .collect::<Vec<_>>()
-                    .into(),
+                    .map(|o| Object::from((*o).clone()))
+                    .collect::<Vec<_>>(),
             ),
             ObjectHashable::FrozenSet(s) => {
                 Object::FrozenSet(s.iter().cloned().collect::<IndexSet<_>>())
@@ -325,19 +323,21 @@ pub fn load_bytes(data: &[u8], python_version: PyVersion) -> Result<(Object, Vec
 pub fn load_pyc(data: impl Read) -> Result<PycFile, Error> {
     let data = data.bytes().collect::<Result<Vec<u8>, _>>()?;
 
-    let magic_number = u32::from_le_bytes(data[0..4].try_into().unwrap());
+    let magic_number = u32::from_le_bytes(data[0..4].try_into().map_err(|_| Error::NoMagicNumber)?);
     let python_version = PyVersion::try_from(magic_number)?;
 
     let timestamp = if python_version >= (3, 7) {
-        Some(u32::from_le_bytes(data[4..8].try_into().unwrap()))
+        Some(u32::from_le_bytes(
+            data[4..8].try_into().map_err(|_| Error::NoTimeStamp)?,
+        ))
     } else {
         None
     };
 
     let hash = if python_version >= (3, 7) {
-        u64::from_le_bytes(data[8..16].try_into().unwrap())
+        u64::from_le_bytes(data[8..16].try_into().map_err(|_| Error::NoHash)?)
     } else {
-        u64::from_le_bytes(data[4..12].try_into().unwrap())
+        u64::from_le_bytes(data[4..12].try_into().map_err(|_| Error::NoHash)?)
     };
 
     let data = &data[16..];
@@ -362,7 +362,7 @@ pub fn dump_pyc(writer: &mut impl Write, pyc_file: PycFile) -> Result<(), Error>
         buf.extend_from_slice(&u32::to_le_bytes(timestamp));
     }
     buf.extend_from_slice(&u64::to_le_bytes(pyc_file.hash));
-    buf.extend_from_slice(&py_writer.write_object(Some(pyc_file.object)));
+    buf.extend_from_slice(&py_writer.write_object(Some(pyc_file.object))?);
 
     std::io::copy(&mut buf.as_slice(), writer)?;
 
@@ -381,7 +381,7 @@ pub fn dump_bytes(
 
     let mut py_writer = PyWriter::new(references.unwrap_or_default(), marshal_version);
 
-    Ok(py_writer.write_object(Some(obj)))
+    py_writer.write_object(Some(obj))
 }
 
 #[cfg(test)]
@@ -585,7 +585,7 @@ mod tests {
             extract_object!(Some(obj), Object::List(list) => list, Error::UnexpectedObject)
                 .unwrap()
                 .iter()
-                .map(|o| *o.clone())
+                .map(|o| o.clone())
                 .collect::<Vec<_>>(),
             vec![
                 Object::Long(BigInt::from(1)),
