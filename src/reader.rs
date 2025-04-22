@@ -36,7 +36,7 @@ macro_rules! resolve_object_ref {
     ($self:expr, $refs:expr) => {
         match $self.ok_or_else(|| $crate::error::Error::UnexpectedNull) {
             Ok(val) => match val {
-                Object::LoadRef(index) | Object::StoreRef(index) => {
+                $crate::Object::LoadRef(index) | $crate::Object::StoreRef(index) => {
                     let reference = $refs.get(index);
 
                     match reference {
@@ -57,8 +57,8 @@ macro_rules! extract_strings_tuple {
         $objs
             .iter()
             .map(|o| match resolve_object_ref!(Some((*o).clone()), $refs)? {
-                Object::String(string) => Ok(string.clone()),
-                _ => Err(Error::UnexpectedObject),
+                $crate::Object::String(string) => Ok(string.clone()),
+                _ => Err($crate::error::Error::UnexpectedObject),
             })
             .collect::<Result<Vec<_>, _>>()
     };
@@ -70,8 +70,8 @@ macro_rules! extract_strings_list {
         $objs
             .iter()
             .map(|o| match o {
-                Object::String(string) => Ok(string.clone()),
-                _ => Err(Error::UnexpectedObject),
+                $crate::Object::String(string) => Ok(string.clone()),
+                _ => Err($crate::error::Error::UnexpectedObject),
             })
             .collect::<Result<Vec<_>, _>>()
     };
@@ -83,8 +83,8 @@ macro_rules! extract_strings_set {
         $objs
             .iter()
             .map(|o| match o {
-                ObjectHashable::String(string) => Ok(string.clone()),
-                _ => Err(Error::UnexpectedObject),
+                $crate::ObjectHashable::String(string) => Ok(string.clone()),
+                _ => Err($crate::error::Error::UnexpectedObject),
             })
             .collect::<Result<HashSet<_>, _>>()
     };
@@ -96,8 +96,8 @@ macro_rules! extract_strings_frozenset {
         $objs
             .iter()
             .map(|o| match o {
-                ObjectHashable::String(string) => Ok(string.clone()),
-                _ => Err(Error::UnexpectedObject),
+                $crate::ObjectHashable::String(string) => Ok(string.clone()),
+                _ => Err($crate::error::Error::UnexpectedObject),
             })
             .collect::<Result<HashSet<_>, _>>()
     };
@@ -109,10 +109,10 @@ macro_rules! extract_strings_dict {
         $objs
             .iter()
             .map(|(k, v)| match (k, v) {
-                (ObjectHashable::String(key), Object::String(value)) => {
+                ($crate::ObjectHashable::String(key), $crate::Object::String(value)) => {
                     Ok((key.clone(), value.clone()))
                 }
-                _ => Err(Error::UnexpectedObject),
+                _ => Err($crate::error::Error::UnexpectedObject),
             })
             .collect::<Result<HashMap<_, _>, _>>()
     };
