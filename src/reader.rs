@@ -56,7 +56,7 @@ macro_rules! extract_strings_tuple {
     ($objs:expr, $refs:expr) => {
         $objs
             .iter()
-            .map(|o| match resolve_object_ref!(Some((*o).clone()), $refs)? {
+            .map(|o| match $crate::resolve_object_ref!(Some((*o).clone()), $refs)? {
                 $crate::Object::String(string) => Ok(string.clone()),
                 _ => Err($crate::error::Error::UnexpectedObject),
             })
