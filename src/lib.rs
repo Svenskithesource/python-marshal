@@ -90,27 +90,6 @@ bitflags! {
     }
 }
 
-#[rustfmt::skip]
-#[derive(Clone, Debug, PartialEq)]
-pub struct Code310 {
-    pub argcount:        u32,
-    pub posonlyargcount: u32,
-    pub kwonlyargcount:  u32,
-    pub nlocals:         u32,
-    pub stacksize:       u32,
-    pub flags:           CodeFlags,
-    pub code:            Box<Object>, // Needs to contain Vec<u8> as a value or a reference
-    pub consts:          Box<Object>, // Needs to contain Vec<Object> as a value or a reference
-    pub names:           Box<Object>, // Needs to contain Vec<PyString> as a value or a reference
-    pub varnames:        Box<Object>, // Needs to contain Vec<PyString> as a value or a reference
-    pub freevars:        Box<Object>, // Needs to contain Vec<PyString> as a value or a reference
-    pub cellvars:        Box<Object>, // Needs to contain Vec<PyString> as a value or a reference
-    pub filename:        Box<Object>, // Needs to contain PyString> as a value or a reference
-    pub name:            Box<Object>, // Needs to contain PyString as a value or a reference
-    pub firstlineno:     u32,
-    pub lnotab:          Box<Object>, // Needs to contain Vec<u8>, as a value or a reference
-}
-
 // Code object enum for all supported Python versions
 #[derive(Clone, Debug, PartialEq)]
 pub enum Code {
