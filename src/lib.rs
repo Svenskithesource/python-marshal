@@ -1,5 +1,5 @@
 pub mod code_objects;
-mod error;
+pub mod error;
 pub mod magic;
 mod optimizer;
 mod reader;
