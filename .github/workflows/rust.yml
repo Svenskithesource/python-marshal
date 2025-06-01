@@ -59,14 +59,7 @@ jobs:
         echo "PYTHON_3_10=$HOME/.pyenv/versions/3.10.1/bin/python3.10" >> $GITHUB_ENV
         echo "PYTHON_3_11=$HOME/.pyenv/versions/3.11.1/bin/python3.11" >> $GITHUB_ENV
         echo "PYTHON_3_12=$HOME/.pyenv/versions/3.12.1/bin/python3.12" >> $GITHUB_ENV
-        echo "PYTHON_3_13=$HOME/.pyenv/versions/3.13.1/bin/python3.13" >> $GITHUB_ENV
-
-    - name: Show installed Python versions
-      run: |
-        $PYTHON_3_10 --version
-        $PYTHON_3_11 --version
-        $PYTHON_3_12 --version
-        $PYTHON_3_13 --version
+        echo "PYTHON_3_13=$HOME/.pyenv/versions/3.13.1/bin/python3.13" >> $GITHUB_ENV+
 
     - name: Build
       run: cargo build --verbose
@@ -79,4 +72,3 @@ jobs:
       with:
         path: tests/data
         key: python-stdlib-3.10.1-3.11.1-3.12.1-3.13.1-${{ runner.os }}
-        
