@@ -17,6 +17,14 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    - name: Restore stdlib cache
+      uses: actions/cache/restore@v4
+      with:
+        path: tests/data
+        key: python-stdlib-3.10.14-3.11.9-3.12.3-3.13.3-${{ runner.os }}
+        restore-keys: |
+          python-stdlib-
+
     - name: Install pyenv and Python versions
       run: |
         versions=("3.10.1" "3.11.1" "3.12.1" "3.13.1")
@@ -67,9 +75,8 @@ jobs:
       run: cargo test --verbose -- --nocapture
 
     - name: Cache Python standard libraries
-      uses: actions/cache@v4
+      uses: actions/cache/save@v4
       with:
         path: tests/data
         key: python-stdlib-3.10.1-3.11.1-3.12.1-3.13.1-${{ runner.os }}
-        restore-keys: |
-          python-stdlib-
+        
