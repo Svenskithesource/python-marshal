@@ -39,21 +39,21 @@ jobs:
         eval "$(pyenv init --path)"
         eval "$(pyenv virtualenv-init -)"
 
-        pyenv install 3.10.14
-        pyenv install 3.11.9
-        pyenv install 3.12.3
-        pyenv install 3.13.0b1
+        # pyenv install 3.10.14
+        # pyenv install 3.11.9
+        # pyenv install 3.12.3
+        pyenv install 3.13.3
 
-        echo "PYTHON_3_10=$HOME/.pyenv/versions/3.10.14/bin/python3.10" >> $GITHUB_ENV
-        echo "PYTHON_3_11=$HOME/.pyenv/versions/3.11.9/bin/python3.11" >> $GITHUB_ENV
-        echo "PYTHON_3_12=$HOME/.pyenv/versions/3.12.3/bin/python3.12" >> $GITHUB_ENV
-        echo "PYTHON_3_13=$HOME/.pyenv/versions/3.13.0b1/bin/python3.13" >> $GITHUB_ENV
+        # echo "PYTHON_3_10=$HOME/.pyenv/versions/3.10.14/bin/python3.10" >> $GITHUB_ENV
+        # echo "PYTHON_3_11=$HOME/.pyenv/versions/3.11.9/bin/python3.11" >> $GITHUB_ENV
+        # echo "PYTHON_3_12=$HOME/.pyenv/versions/3.12.3/bin/python3.12" >> $GITHUB_ENV
+        echo "PYTHON_3_13=$HOME/.pyenv/versions/3.13.3/bin/python3.13" >> $GITHUB_ENV
 
     - name: Show installed Python versions
       run: |
-        $PYTHON_3_10 --version
-        $PYTHON_3_11 --version
-        $PYTHON_3_12 --version
+        # $PYTHON_3_10 --version
+        # $PYTHON_3_11 --version
+        # $PYTHON_3_12 --version
         $PYTHON_3_13 --version
 
     - name: Build
