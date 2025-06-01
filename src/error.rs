@@ -5,6 +5,7 @@ use std::{
 
 use crate::{magic::PyVersion, Kind, Object};
 
+/// Represents errors that can occur while reading or writing Python marshal data.
 #[derive(Debug)]
 #[allow(dead_code)]
 pub enum Error {
@@ -26,9 +27,11 @@ pub enum Error {
     InvalidData(std::io::Error),
     InvalidString,
     InvalidUtf16String(std::string::FromUtf16Error),
+    InvalidReference(usize),
+    InvalidStoreRef,
     UnexpectedObject,
-    InvalidReference,
     UnexpectedNull,
+    DepthLimitExceeded,
 }
 
 impl Display for Error {
@@ -66,8 +69,12 @@ impl Display for Error {
             Error::InvalidUtf16String(err) => {
                 write!(f, "bad marshal data (invalid utf16 string): {:?}", err)
             }
+            Error::InvalidReference(index) => {
+                write!(f, "bad marshal data (invalid reference index: {})", index)
+            }
+            Error::InvalidStoreRef => write!(f, "bad marshal data (invalid store reference)"),
+            Error::DepthLimitExceeded => write!(f, "depth limit exceeded while processing object"),
             Error::UnexpectedObject => write!(f, "unexpected object"),
-            Error::InvalidReference => write!(f, "bad marshal data (invalid reference)"),
             Error::UnexpectedNull => write!(f, "unexpected NULL object"),
         }
     }

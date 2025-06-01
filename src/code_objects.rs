@@ -1,5 +1,6 @@
 use crate::{extract_object, extract_strings_tuple, resolve_object_ref, CodeFlags, Error, Object};
 
+/// Represents a Python code object for Python 3.10.
 #[rustfmt::skip]
 #[derive(Clone, Debug, PartialEq)]
 pub struct Code310 {
@@ -86,6 +87,7 @@ impl Code310 {
     }
 }
 
+/// Represents a Python code object for Python 3.11, 3.12, 3.13. They all share the same structure.
 #[rustfmt::skip]
 #[derive(Clone, Debug, PartialEq)]
 pub struct Code311 {

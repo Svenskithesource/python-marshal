@@ -4,7 +4,6 @@ pub mod magic;
 mod optimizer;
 mod reader;
 pub mod resolver;
-mod walker;
 mod writer;
 
 use bitflags::bitflags;
@@ -22,6 +21,7 @@ use reader::PyReader;
 use std::io::{Read, Write};
 use writer::PyWriter;
 
+/// Represents the kind of object that is used in the Python marshal format. It is the first byte of each object in the marshal format.
 #[derive(Debug, Clone, Copy, FromPrimitive, ToPrimitive, PartialEq, Eq, Hash)]
 #[repr(u8)]
 #[rustfmt::skip]
@@ -59,6 +59,7 @@ pub enum Kind {
 }
 
 bitflags! {
+    /// Represents the flags that can be set on a code object.
     #[derive(Clone, Debug, PartialEq)]
     pub struct CodeFlags: u32 {
         const OPTIMIZED                   = 0x1;
@@ -103,6 +104,8 @@ pub enum Code {
     V313(code_objects::Code311),
 }
 
+/// Represents a Python string object. Python supports many kinds of strings, this is why we use BString to represent the value.
+/// It is basically a Vec<u8> with some additional methods/traits.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct PyString {
     pub value: BString,
@@ -134,6 +137,7 @@ impl PyString {
     }
 }
 
+/// Represents a Python object. A marshal file exists of a single object, which can contain other objects.
 #[rustfmt::skip]
 #[derive(Clone, Debug, PartialEq)]
 pub enum Object {
@@ -156,8 +160,7 @@ pub enum Object {
     StoreRef  (usize),
 }
 
-// impl Eq for Object {} // Required to check if Code objects are equal with float values
-
+/// Represents a hashable Object. It is used in Dicts, Sets, and FrozenSets.
 #[rustfmt::skip]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum ObjectHashable {
@@ -173,12 +176,12 @@ pub enum ObjectHashable {
     Tuple     (Vec<ObjectHashable>),
     FrozenSet (HashableHashSet<ObjectHashable>),
     LoadRef   (usize), // You need to ensure that the reference is hashable
-    StoreRef  (usize), // Same as above
+    StoreRef  (usize), // See above
 }
 
 impl ObjectHashable {
-    pub fn from_ref(obj: Object, references: &Vec<Object>) -> Result<Self, Error> {
-        // If the object is a reference, resolve it and make sure it's hashable
+    /// If the object is a reference, resolve it and make sure it's hashable
+    pub fn from_ref(obj: Object, references: &Vec<Object>) -> Result<Self, Error> { 
         match obj {
             Object::LoadRef(index) | Object::StoreRef(index) => {
                 if let Some(resolved_obj) = references.get(index) {
@@ -190,7 +193,7 @@ impl ObjectHashable {
                         _ => unreachable!(),
                     }
                 } else {
-                    Err(Error::InvalidReference)
+                    Err(Error::InvalidReference(index))
                 }
             }
             Object::Tuple(t) => Ok(Self::Tuple(
@@ -265,28 +268,32 @@ impl From<ObjectHashable> for Object {
     }
 }
 
+/// Represents a Python .pyc file, which contains a marshaled Python object along with metadata such as the Python version, timestamp, and hash.
 #[derive(Debug, Clone)]
 pub struct PycFile {
     pub python_version: PyVersion,
-    pub timestamp: Option<u32>, // Only present in Python 3.7 and later
+    /// Only present in Python 3.7 and later
+    pub timestamp: Option<u32>, 
     pub hash: u64,
     pub object: Object,
     pub references: Vec<Object>,
 }
 
+/// Remove all unused references
 pub fn optimize_references(object: Object, references: Vec<Object>) -> (Object, Vec<Object>) {
-    // Remove all unused references
+    
     let mut object = object;
 
     let usage_counter = get_used_references(&mut object, references.clone());
 
     let mut optimizer = ReferenceOptimizer::new(references, usage_counter);
 
-    object.transform(&mut optimizer);
+    object.transform(&mut optimizer); // Transform the object to optimize references
 
-    (object, optimizer.new_references)
+    (object, optimizer.new_references) // new_references contains only the used references
 }
 
+/// Load a Python object from a byte slice, returning the object and its references. Behaves like `marshal.loads` in Python.
 pub fn load_bytes(data: &[u8], python_version: PyVersion) -> Result<(Object, Vec<Object>), Error> {
     if python_version < (3, 0) {
         return Err(Error::UnsupportedPyVersion(python_version));
@@ -299,6 +306,7 @@ pub fn load_bytes(data: &[u8], python_version: PyVersion) -> Result<(Object, Vec
     Ok((object, py_reader.references))
 }
 
+/// Load a Python .pyc file from a byte stream, returning a `PycFile` struct.
 pub fn load_pyc(data: impl Read) -> Result<PycFile, Error> {
     let data = data.bytes().collect::<Result<Vec<u8>, _>>()?;
 
@@ -332,6 +340,7 @@ pub fn load_pyc(data: impl Read) -> Result<PycFile, Error> {
     })
 }
 
+/// Dumps a `PycFile` to a byte stream, writing the magic number, timestamp, hash, and the marshaled object.
 pub fn dump_pyc(writer: &mut impl Write, pyc_file: PycFile) -> Result<(), Error> {
     let mut buf = Vec::new();
     let mut py_writer = PyWriter::new(pyc_file.references, 4);
@@ -343,11 +352,12 @@ pub fn dump_pyc(writer: &mut impl Write, pyc_file: PycFile) -> Result<(), Error>
     buf.extend_from_slice(&u64::to_le_bytes(pyc_file.hash));
     buf.extend_from_slice(&py_writer.write_object(Some(pyc_file.object))?);
 
-    std::io::copy(&mut buf.as_slice(), writer)?;
+    std::io::copy(&mut buf.as_slice(), writer)?; // Write the buffer to the writer
 
     Ok(())
 }
 
+/// Dumps a Python object to a byte vector. Behaves like `marshal.dumps` in Python.
 pub fn dump_bytes(
     obj: Object,
     references: Option<Vec<Object>>,

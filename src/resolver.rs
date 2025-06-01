@@ -5,9 +5,11 @@ use crate::{
     Object, ObjectHashable,
 };
 
+/// Checks if there are any recursive references in the given object or the ones it references.
 struct RecursiveCheck {
     references: Vec<Object>,
     recursive_refs: Vec<usize>,
+    /// Stack to keep track of the current references being visited.
     ref_stack: Vec<usize>,
 }
 
@@ -83,6 +85,7 @@ impl Transformer for RecursiveCheck {
     }
 }
 
+/// Replaces LoadRef and StoreRef with the actual referenced objects. For any pyc file this should replace all references as it is not possible to have a recursive reference in a pyc file that isn't specifically crafted to do so.
 struct Resolver {
     references: Vec<Object>,
     recursive_refs: Vec<usize>,
@@ -149,6 +152,7 @@ impl Transformer for Resolver {
     }
 }
 
+/// Returns a list of indices of all recursive references in the given object and its references.
 pub fn get_recursive_refs(obj: Object, references: Vec<Object>) -> Result<Vec<usize>, Error> {
     let mut checker = RecursiveCheck::new(references);
 
@@ -159,6 +163,8 @@ pub fn get_recursive_refs(obj: Object, references: Vec<Object>) -> Result<Vec<us
     Ok(checker.recursive_refs)
 }
 
+/// Attempts to resolve all references in the given object and its references. This will remove all unused references and resolve all non-recursively stored references.
+/// If there are any recursive references, they will be left as LoadRef or StoreRef objects and included in the returned references.
 pub fn resolve_all_refs(
     obj: Object,
     references: Vec<Object>,

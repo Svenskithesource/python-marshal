@@ -5,10 +5,12 @@ use indexmap::set::MutableValues;
 
 use crate::{Code, Object, ObjectHashable};
 
+/// Trait for transforming Python objects.
 #[allow(non_snake_case, unused_variables)]
 pub trait Transformer: Sized {
-    // Return None to keep the object as is
+    /// Dispatch method to visit an object and return a transformed version. When returning `None`, the object is left unchanged.
     fn visit(&mut self, obj: &mut Object) -> Option<Object> {
+        // Return None to keep the object as is
         match obj {
             Object::None => self.visit_None(obj),
             Object::StopIteration => self.visit_StopIteration(obj),
@@ -158,6 +160,7 @@ pub trait Transformer: Sized {
         None
     }
 
+    /// Same as `visit`, but for hashable objects.
     fn visit_Hashable(&mut self, obj: &mut ObjectHashable) -> Option<ObjectHashable> {
         match obj {
             ObjectHashable::None => self.visit_HashableNone(obj),
@@ -266,11 +269,13 @@ impl Transformable for ObjectHashable {
     }
 }
 
+/// Removes unused references from a list of references and an object and updates the reference indices in the objects.
 pub struct ReferenceOptimizer {
     pub references: Vec<Object>,
     pub new_references: Vec<Object>,
     pub references_used: HashSet<usize>,
-    reference_map: HashMap<usize, usize>, // Map of old index to new index
+    /// Map of old index to new index
+    reference_map: HashMap<usize, usize>, 
 }
 
 impl ReferenceOptimizer {
@@ -309,7 +314,7 @@ impl Transformer for ReferenceOptimizer {
         if let Object::StoreRef(index) = obj {
             if self.references_used.contains(index) {
                 let mut obj = self.references.get(*index)?.clone();
-                obj.transform(self);
+                obj.transform(self); // Transform the object to ensure it is up-to-date
 
                 self.new_references.push(obj);
                 let new_index = self.new_references.len() - 1;
@@ -350,6 +355,7 @@ impl Transformer for ReferenceOptimizer {
     }
 }
 
+/// Creates a set of used references from a given object and a list of references.
 struct ReferenceCounter {
     pub references: Vec<Object>,
     pub references_used: HashSet<usize>, // Indexes of references that are used

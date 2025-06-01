@@ -3,11 +3,11 @@ name = "python_marshal"
 license = "GPL-3.0-or-later"
 description = "A Rust library for reading and writing Python marshal files."
 readme = "README.md"
-version = "0.3.8"
+version = "0.3.9"
 edition = "2021"
 
 [dependencies]
-bitflags = "2.8.0"
+bitflags = "2.9.1"
 bstr = "1.11.3"
 hashable = "0.0.0"
 indexmap = "2.7.1"
@@ -16,14 +16,14 @@ num-bigint = "0.4.6"
 num-complex = "0.4.6"
 num-derive = "0.4.2"
 num-traits = "0.2.19"
-ordered-float = "4.2.2"
+ordered-float = "5.0.0"
 
 [dev-dependencies]
 tempfile = "3.15.0"
 reqwest = { version = "0.12.12", features = ["blocking"] }
-zip = "2.2.2"
+zip = "4.0.0"
 cmd_lib = "1.9.5"
-env_logger = "0.11.6"
+env_logger = "0.11.8"
 rayon = "1.10.0"
 
 # Enable max optimizations for dependencies, but not for our code:

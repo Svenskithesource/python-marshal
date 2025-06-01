@@ -5,12 +5,15 @@ use num_traits::{Signed, ToPrimitive};
 
 use crate::{error::Error, Code, Kind, Object};
 
+/// The maximum depth limit for writing objects to prevent stack overflow.
 const DEPTH_LIMIT: usize = 1000;
 
+/// A writer for Python objects that serializes them into a binary format
 pub struct PyWriter {
     data: Vec<u8>,
     marshal_version: u8,
     references: Vec<Object>,
+    /// The current depth of the object being written.
     depth: usize,
 }
 
@@ -94,7 +97,7 @@ impl PyWriter {
         self.depth += 1;
 
         if self.depth > DEPTH_LIMIT {
-            panic!("Depth limit reached while trying to write {:?}", obj);
+            return Err(Error::DepthLimitExceeded);
         }
 
         match obj {
@@ -287,6 +290,7 @@ impl PyWriter {
                         self.w_object(Some((*value.lnotab).clone()), false)?;
                     }
                     Code::V311(value) | Code::V312(value) | Code::V313(value) => {
+                        // Python 3.11, 3.12, and 3.13 share the same structure
                         // https://github.com/python/cpython/blob/3.11/Python/marshal.c#L558
                         self.w_kind(Kind::Code, is_ref);
                         self.w_long(value.argcount.try_into().map_err(|_| Error::InvalidConversion)?);
@@ -326,7 +330,7 @@ impl PyWriter {
 
                 match reference {
                     None => {
-                        panic!("Reference {} not found in references list", index);
+                        return Err(Error::InvalidReference(index));
                     }
                     Some(reference) => {
                         self.w_object(Some((*reference).clone()), true)?;

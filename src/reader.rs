@@ -11,12 +11,15 @@ use crate::{
     code_objects, error::Error, Code, CodeFlags, Kind, Object, ObjectHashable, PyString, PyVersion,
 };
 
+/// A reader for Python marshal data.
 pub struct PyReader {
     cursor: Cursor<Vec<u8>>,
     pub references: Vec<Object>,
     version: PyVersion,
 }
 
+/// Extracts an object from a result, matching it against a specific variant.
+/// If the object matches the variant, it will return this. Otherwise, it returns an error.
 #[macro_export]
 macro_rules! extract_object {
     ($self:expr, $variant:pat => $binding:ident, $err:expr) => {
@@ -30,6 +33,7 @@ macro_rules! extract_object {
     };
 }
 
+/// Resolves an object ref if the object is a reference (LoadRef or StoreRef). If not, it returns the object itself.
 #[macro_export]
 macro_rules! resolve_object_ref {
     // Gets the object from the reference table by index
@@ -41,7 +45,7 @@ macro_rules! resolve_object_ref {
 
                     match reference {
                         Some(obj) => Ok((*obj).clone()),
-                        None => Err($crate::error::Error::InvalidReference),
+                        None => Err($crate::error::Error::InvalidReference(index)),
                     }
                 }
                 x => Ok(x),
@@ -51,19 +55,23 @@ macro_rules! resolve_object_ref {
     };
 }
 
+/// Extracts a vector of string objects from a tuple of objects, resolving references if necessary.
 #[macro_export]
 macro_rules! extract_strings_tuple {
     ($objs:expr, $refs:expr) => {
         $objs
             .iter()
-            .map(|o| match $crate::resolve_object_ref!(Some((*o).clone()), $refs)? {
-                $crate::Object::String(string) => Ok(string.clone()),
-                _ => Err($crate::error::Error::UnexpectedObject),
-            })
+            .map(
+                |o| match $crate::resolve_object_ref!(Some((*o).clone()), $refs)? {
+                    $crate::Object::String(string) => Ok(string.clone()),
+                    _ => Err($crate::error::Error::UnexpectedObject),
+                },
+            )
             .collect::<Result<Vec<_>, _>>()
     };
 }
 
+/// Extracts a vector of string objects from a list of objects.
 #[macro_export]
 macro_rules! extract_strings_list {
     ($objs:expr) => {
@@ -77,6 +85,7 @@ macro_rules! extract_strings_list {
     };
 }
 
+/// Extracts a vector of string objects from a set of objects.
 #[macro_export]
 macro_rules! extract_strings_set {
     ($objs:expr) => {
@@ -90,6 +99,7 @@ macro_rules! extract_strings_set {
     };
 }
 
+/// Extracts a vector of string objects from a frozen set of objects.
 #[macro_export]
 macro_rules! extract_strings_frozenset {
     ($objs:expr) => {
@@ -103,6 +113,7 @@ macro_rules! extract_strings_frozenset {
     };
 }
 
+/// Extracts a hashmap of string keys and string values from a dictionary of objects.
 #[macro_export]
 macro_rules! extract_strings_dict {
     ($objs:expr) => {
@@ -224,7 +235,7 @@ impl PyReader {
     fn r_object(&mut self) -> Result<Option<Object>, Error> {
         let code = self.r_u8()?;
 
-        let flag = (code & Kind::FlagRef as u8) != 0;
+        let flag = (code & Kind::FlagRef as u8) != 0; // Check if the object is a reference (FlagRef)
 
         let obj_kind = Kind::from_u8(code & !(Kind::FlagRef as u8)).ok_or(Error::UnreadableKind)?;
 
@@ -242,7 +253,7 @@ impl PyReader {
                 Some(self.references.len() - 1)
             }
             _ => None,
-        };
+        }; // Precalculate the index for reference storage if needed
 
         let obj = match obj_kind {
             Kind::Null => None,
@@ -261,6 +272,7 @@ impl PyReader {
                 Some(value)
             }
             Kind::Long => {
+                // Read a long integer, which is a variable-length integer in Python. Deciphered from the Python source code.
                 let n = self.r_long()?;
                 let number = {
                     let size = n.wrapping_abs() as usize;
@@ -369,6 +381,7 @@ impl PyReader {
                     .r_vec(length as usize, Kind::Set)?
                     .into_iter()
                     .map(
+                        // Try to convert the object to an ObjectHashable
                         |o| match ObjectHashable::from_ref(o.clone(), &self.references) {
                             Ok(obj) => Ok(obj),
                             Err(_) => Err(Error::UnexpectedObject),
@@ -379,8 +392,9 @@ impl PyReader {
                 let value = Object::Set(value);
 
                 if flag {
-                    idx = Some(self.references.len());
-                    self.set_reference(idx.ok_or(Error::InvalidReference)?, value.clone());
+                    let index = self.references.len();
+                    idx = Some(index);
+                    self.set_reference(idx.ok_or(Error::InvalidReference(index))?, value.clone());
                 }
 
                 Some(value)
@@ -391,6 +405,7 @@ impl PyReader {
                     self.r_vec(length as usize, Kind::FrozenSet)?
                         .into_iter()
                         .map(
+                            // Try to convert the object to an ObjectHashable
                             |o| match ObjectHashable::from_ref(o.clone(), &self.references) {
                                 Ok(obj) => Ok(obj),
                                 Err(_) => Err(Error::UnexpectedObject),
@@ -476,6 +491,7 @@ impl PyReader {
                         minor: 13,
                         ..
                     } => {
+                        // Python 3.11, 3.12, and 3.13 code objects have the same structure.
                         let argcount = self.r_long()?;
                         let posonlyargcount = self.r_long()?;
                         let kwonlyargcount = self.r_long()?;
@@ -523,7 +539,7 @@ impl PyReader {
                         )
                     }
                     _ => {
-                        panic!("Unsupported version: {:?}", self.version);
+                        return Err(Error::UnsupportedPyVersion(self.version));
                     }
                 };
 
@@ -536,7 +552,7 @@ impl PyReader {
 
                 match reference {
                     Some(_) => Some(Object::LoadRef(index)),
-                    None => return Err(Error::InvalidReference),
+                    None => return Err(Error::InvalidReference(index)),
                 }
             }
             Kind::Unknown => return Err(Error::InvalidKind(obj_kind)),
@@ -563,7 +579,7 @@ impl PyReader {
         };
 
         match flag {
-            true => Ok(Some(Object::StoreRef(idx.ok_or(Error::InvalidReference)?))),
+            true => Ok(Some(Object::StoreRef(idx.ok_or(Error::InvalidStoreRef)?))),
             false => Ok(obj),
         }
     }
