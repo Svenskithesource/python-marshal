@@ -11,12 +11,53 @@ env:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Python build dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y make build-essential libssl-dev zlib1g-dev \
+            libbz2-dev libreadline-dev libsqlite3-dev wget curl llvm \
+            libncursesw5-dev xz-utils tk-dev libxml2-dev libxmlsec1-dev \
+            libffi-dev liblzma-dev
+
+    - name: Install pyenv and Python versions
+      run: |
+        curl https://pyenv.run | bash
+
+        echo 'export PYENV_ROOT="$HOME/.pyenv"' >> $GITHUB_ENV
+        echo 'export PATH="$PYENV_ROOT/bin:$PATH"' >> $GITHUB_ENV
+        echo 'eval "$(pyenv init --path)"' >> $GITHUB_ENV
+        echo 'eval "$(pyenv virtualenv-init -)"' >> $GITHUB_ENV
+
+        export PYENV_ROOT="$HOME/.pyenv"
+        export PATH="$PYENV_ROOT/bin:$PATH"
+        eval "$(pyenv init --path)"
+        eval "$(pyenv virtualenv-init -)"
+
+        pyenv install 3.10.14
+        pyenv install 3.11.9
+        pyenv install 3.12.3
+        pyenv install 3.13.0b1
+
+        echo "PYTHON_3_10=$HOME/.pyenv/versions/3.10.14/bin/python3.10" >> $GITHUB_ENV
+        echo "PYTHON_3_11=$HOME/.pyenv/versions/3.11.9/bin/python3.11" >> $GITHUB_ENV
+        echo "PYTHON_3_12=$HOME/.pyenv/versions/3.12.3/bin/python3.12" >> $GITHUB_ENV
+        echo "PYTHON_3_13=$HOME/.pyenv/versions/3.13.0b1/bin/python3.13" >> $GITHUB_ENV
+
+    - name: Show installed Python versions
+      run: |
+        $PYTHON_3_10 --version
+        $PYTHON_3_11 --version
+        $PYTHON_3_12 --version
+        $PYTHON_3_13 --version
+
     - name: Build
       run: cargo build --verbose
+
     - name: Run tests
       run: cargo test --verbose
