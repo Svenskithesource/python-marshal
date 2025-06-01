@@ -74,17 +74,34 @@ fn compile_repo(version: &PyVersion) {
     let lib_dir = Path::new(DATA_PATH).join(format!("cpython-{}/Lib", version));
 
     let path_str = lib_dir.canonicalize().unwrap();
-    let cmd_version = format!("{}.{}", version.major, version.minor);
 
-    let result = run_cmd! {
-        py -$cmd_version -m compileall $path_str > nul 2>&1
-    };
+    #[cfg(target_os = "windows")]
+    {
+        let cmd_version = format!("{}.{}", version.major, version.minor);
+        let result = run_cmd! {
+            py -$cmd_version -m compileall $path_str > nul 2>&1
+        };
+        if result.is_err() {
+            println!(
+                "Failed to compile standard library for Python version {}, still continuing",
+                cmd_version
+            );
+        }
+    }
 
-    if result.is_err() {
-        println!(
-            "Failed to compile standard library for Python version {}, still continuing",
-            cmd_version
-        );
+    #[cfg(not(target_os = "windows"))]
+    {
+        let env_var_name = format!("PYTHON_{}_{}", version.major, version.minor); // For github actions
+        let python_path = std::env::var(env_var_name).unwrap_or_else(|_| "python".to_string());
+        let result = run_cmd! {
+            $python_path -m compileall $path_str > /dev/null 2>&1
+        };
+        if result.is_err() {
+            println!(
+                "Failed to compile standard library for Python version {}, still continuing",
+                format!("{}.{}", version.major, version.minor)
+            );
+        }
     }
 }
 
@@ -94,15 +111,35 @@ pub fn setup() {
 
         std::fs::create_dir_all(DATA_PATH).expect("Failed to create data directory");
 
-        let cmd_version = format!("{}.{}", version.major, version.minor);
+        #[cfg(target_os = "windows")]
+        {
+            let cmd_version = format!("{}.{}", version.major, version.minor);
+            match run_cmd!(
+                py -$cmd_version -m __hello__ > nul 2>&1
+            ) {
+                Ok(_) => {}
+                Err(_) => {
+                    println!("Python version {} is not installed", cmd_version);
+                    continue;
+                }
+            }
+        }
 
-        match run_cmd!(
-            py -$cmd_version -m __hello__ > nul 2>&1
-        ) {
-            Ok(_) => {}
-            Err(_) => {
-                println!("Python version {} is not installed", cmd_version);
-                continue;
+        #[cfg(not(target_os = "windows"))]
+        {
+            let env_var_name = format!("PYTHON_{}_{}", version.major, version.minor); // For github actions
+            let python_path = std::env::var(env_var_name).unwrap_or_else(|_| "python".to_string());
+            match run_cmd!(
+                $python_path -c "print('Hello, World!')" > /dev/null 2>&1
+            ) {
+                Ok(_) => {}
+                Err(_) => {
+                    println!(
+                        "Python version {} is not installed",
+                        format!("{}.{}", version.major, version.minor)
+                    );
+                    continue;
+                }
             }
         }
 
