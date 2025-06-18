@@ -232,7 +232,7 @@ impl PyWriter {
             Some(Object::Code(value)) => {
                 let value = value;
 
-                match *value {
+                match value {
                     Code::V310(value) => {
                         // https://github.com/python/cpython/blob/3.10/Python/marshal.c#L511
                         self.w_kind(Kind::Code, is_ref);

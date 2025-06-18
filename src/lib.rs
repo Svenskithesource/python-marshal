@@ -155,7 +155,7 @@ pub enum Object {
     Dict      (IndexMap<ObjectHashable, Object>),
     Set       (IndexSet<ObjectHashable>),
     FrozenSet (IndexSet<ObjectHashable>),
-    Code      (Box<Code>),
+    Code      (Code),
     LoadRef   (usize),
     StoreRef  (usize),
 }
@@ -719,7 +719,7 @@ mod tests {
         let code = extract_object!(Some(resolve_object_ref!(Some(kind), refs).unwrap()), Object::Code(code) => code, Error::UnexpectedObject)
                 .unwrap().clone();
 
-        match *code {
+        match code {
             Code::V310(code) => {
                 let inner_code = extract_object!(Some(resolve_object_ref!(Some((*code.code).clone()), &refs).unwrap()), Object::Bytes(bytes) => bytes, Error::NullInTuple).unwrap();
                 let inner_consts = extract_object!(Some(resolve_object_ref!(Some((*code.consts).clone()), &refs).unwrap()), Object::Tuple(objs) => objs, Error::NullInTuple).unwrap();
@@ -767,7 +767,7 @@ mod tests {
         let code = extract_object!(Some(resolve_object_ref!(Some(kind), refs).unwrap()), Object::Code(code) => code, Error::UnexpectedObject)
                 .unwrap().clone();
 
-        match *code {
+        match code {
             Code::V311(code) => {
                 let inner_code = extract_object!(Some(resolve_object_ref!(Some((*code.code).clone()), &refs).unwrap()), Object::Bytes(bytes) => bytes, Error::NullInTuple).unwrap();
                 let inner_consts = extract_object!(Some(resolve_object_ref!(Some((*code.consts).clone()), &refs).unwrap()), Object::Tuple(objs) => objs, Error::NullInTuple).unwrap();

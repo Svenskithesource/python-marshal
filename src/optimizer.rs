@@ -122,7 +122,7 @@ pub trait Transformer: Sized {
 
     fn visit_Code(&mut self, obj: &mut Object) -> Option<Object> {
         if let Object::Code(code) = obj {
-            match **code {
+            match *code {
                 Code::V310(ref mut code) => {
                     code.code.transform(self);
                     code.consts.transform(self);
