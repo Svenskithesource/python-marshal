@@ -146,8 +146,8 @@ pub enum Object {
     Ellipsis,
     Bool      (bool),
     Long      (BigInt),
-    Float     (f64),
-    Complex   (Complex<f64>),
+    Float     (OrderedFloat<f64>),
+    Complex   (Complex<OrderedFloat<f64>>),
     Bytes     (Vec<u8>),
     String    (PyString),
     Tuple     (Vec<Object>),
@@ -181,7 +181,7 @@ pub enum ObjectHashable {
 
 impl ObjectHashable {
     /// If the object is a reference, resolve it and make sure it's hashable
-    pub fn from_ref(obj: Object, references: &Vec<Object>) -> Result<Self, Error> { 
+    pub fn from_ref(obj: Object, references: &Vec<Object>) -> Result<Self, Error> {
         match obj {
             Object::LoadRef(index) | Object::StoreRef(index) => {
                 if let Some(resolved_obj) = references.get(index) {
@@ -218,10 +218,7 @@ impl TryFrom<Object> for ObjectHashable {
             Object::Bool(b) => Ok(ObjectHashable::Bool(b)),
             Object::Long(i) => Ok(ObjectHashable::Long(i)),
             Object::Float(f) => Ok(ObjectHashable::Float(f.into())),
-            Object::Complex(c) => Ok(ObjectHashable::Complex(Complex {
-                re: OrderedFloat(c.re),
-                im: OrderedFloat(c.im),
-            })),
+            Object::Complex(c) => Ok(ObjectHashable::Complex(Complex { re: c.re, im: c.im })),
             Object::Bytes(b) => Ok(ObjectHashable::Bytes(b)),
             Object::String(s) => Ok(ObjectHashable::String(s)),
             Object::Tuple(t) => Ok(ObjectHashable::Tuple(
@@ -247,11 +244,8 @@ impl From<ObjectHashable> for Object {
             ObjectHashable::Ellipsis => Object::Ellipsis,
             ObjectHashable::Bool(b) => Object::Bool(b),
             ObjectHashable::Long(i) => Object::Long(i),
-            ObjectHashable::Float(f) => Object::Float(f.into_inner()),
-            ObjectHashable::Complex(c) => Object::Complex(Complex {
-                re: c.re.into_inner(),
-                im: c.im.into_inner(),
-            }),
+            ObjectHashable::Float(f) => Object::Float(f),
+            ObjectHashable::Complex(c) => Object::Complex(Complex { re: c.re, im: c.im }),
             ObjectHashable::Bytes(b) => Object::Bytes(b),
             ObjectHashable::String(s) => Object::String(s),
             ObjectHashable::Tuple(t) => Object::Tuple(
@@ -269,11 +263,11 @@ impl From<ObjectHashable> for Object {
 }
 
 /// Represents a Python .pyc file, which contains a marshaled Python object along with metadata such as the Python version, timestamp, and hash.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PycFile {
     pub python_version: PyVersion,
     /// Only present in Python 3.7 and later
-    pub timestamp: Option<u32>, 
+    pub timestamp: Option<u32>,
     pub hash: u64,
     pub object: Object,
     pub references: Vec<Object>,
@@ -281,7 +275,6 @@ pub struct PycFile {
 
 /// Remove all unused references
 pub fn optimize_references(object: Object, references: Vec<Object>) -> (Object, Vec<Object>) {
-    
     let mut object = object;
 
     let usage_counter = get_used_references(&mut object, references.clone());
@@ -427,7 +420,7 @@ mod tests {
         assert_eq!(
             extract_object!(Some(kind), Object::Complex(num) => num, Error::UnexpectedObject)
                 .unwrap(),
-            Complex::new(3.0, 4.0)
+            Complex::new(OrderedFloat(3.0), OrderedFloat(4.0))
         );
     }
 
@@ -836,7 +829,7 @@ mod tests {
     fn test_dump_float() {
         // 1.0
         let data = b"g\x00\x00\x00\x00\x00\x00\xf0?";
-        let object = Object::Float(1.0);
+        let object = Object::Float(OrderedFloat(1.0));
         let dumped = dump_bytes(object, None, (3, 10).into(), 4).unwrap();
         assert_eq!(data.to_vec(), dumped);
     }
@@ -845,7 +838,7 @@ mod tests {
     fn test_dump_complex() {
         // 3 + 4j
         let data = b"y\x00\x00\x00\x00\x00\x00\x08@\x00\x00\x00\x00\x00\x00\x10@";
-        let object = Object::Complex(Complex::new(3.0, 4.0));
+        let object = Object::Complex(Complex::new(OrderedFloat(3.0), OrderedFloat(4.0)));
         let dumped = dump_bytes(object, None, (3, 10).into(), 4).unwrap();
         assert_eq!(data.to_vec(), dumped);
     }

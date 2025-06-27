@@ -130,21 +130,21 @@ impl PyWriter {
             Some(Object::Float(value)) => {
                 if self.marshal_version > 1 {
                     self.w_kind(Kind::BinaryFloat, is_ref);
-                    self.w_float_bin(value);
+                    self.w_float_bin(value.into_inner());
                 } else {
                     self.w_kind(Kind::Float, is_ref);
-                    self.w_float_str(value);
+                    self.w_float_str(value.into_inner());
                 }
             }
             Some(Object::Complex(Complex { re, im })) => {
                 if self.marshal_version > 1 {
                     self.w_kind(Kind::BinaryComplex, is_ref);
-                    self.w_float_bin(re);
-                    self.w_float_bin(im);
+                    self.w_float_bin(re.into_inner());
+                    self.w_float_bin(im.into_inner());
                 } else {
                     self.w_kind(Kind::Complex, is_ref);
-                    self.w_float_str(re);
-                    self.w_float_str(im);
+                    self.w_float_str(re.into_inner());
+                    self.w_float_str(im.into_inner());
                 }
             }
             Some(Object::Bytes(value)) => {

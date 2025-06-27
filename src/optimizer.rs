@@ -6,6 +6,7 @@ use indexmap::set::MutableValues;
 use crate::{Code, Object, ObjectHashable};
 
 /// Trait for transforming Python objects.
+// TODO: Don't use Sized to fix the error
 #[allow(non_snake_case, unused_variables)]
 pub trait Transformer: Sized {
     /// Dispatch method to visit an object and return a transformed version. When returning `None`, the object is left unchanged.

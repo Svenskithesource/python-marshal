@@ -232,9 +232,9 @@ dependencies = [
 
 [[package]]
 name = "cmd_lib"
-version = "1.9.5"
+version = "1.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "371c15a3c178d0117091bd84414545309ca979555b1aad573ef591ad58818d41"
+checksum = "1af0f9b65935ff457da75535a6b6ff117ac858f03f71191188b3b696f90aec5a"
 dependencies = [
  "cmd_lib_macros",
  "env_logger 0.10.2",
@@ -246,9 +246,9 @@ dependencies = [
 
 [[package]]
 name = "cmd_lib_macros"
-version = "1.9.5"
+version = "1.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb844bd05be34d91eb67101329aeba9d3337094c04fd8507d821db7ebb488eaf"
+checksum = "1e69eee115667ccda8b9ed7010bcf13356ad45269fc92aa78534890b42809a64"
 dependencies = [
  "proc-macro-error2",
  "proc-macro2",
@@ -884,9 +884,9 @@ dependencies = [
 
 [[package]]
 name = "indexmap"
-version = "2.9.0"
+version = "2.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cea70ddb795996207ad57735b50c5982d8844f38ba9ee5f1aedcfb708a2aa11e"
+checksum = "fe4cd85333e22411419a0bcae1297d25e58c9443848b11dc6a86fefe8c78a661"
 dependencies = [
  "equivalent",
  "hashbrown",
@@ -1327,7 +1327,7 @@ dependencies = [
 
 [[package]]
 name = "python_marshal"
-version = "0.3.10"
+version = "0.3.11"
 dependencies = [
  "bitflags 2.9.1",
  "bstr",
@@ -1413,9 +1413,9 @@ checksum = "2b15c43186be67a4fd63bee50d0303afffcef381492ebe2c5d87f324e1b8815c"
 
 [[package]]
 name = "reqwest"
-version = "0.12.18"
+version = "0.12.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e98ff6b0dbbe4d5a37318f433d4fc82babd21631f194d370409ceb2e40b2f0b5"
+checksum = "eabf4c97d9130e2bf606614eb937e86edac8292eaa6f422f995d7e8de1eb1813"
 dependencies = [
  "base64",
  "bytes",
@@ -1431,12 +1431,10 @@ dependencies = [
  "hyper-rustls",
  "hyper-tls",
  "hyper-util",
- "ipnet",
  "js-sys",
  "log",
  "mime",
  "native-tls",
- "once_cell",
  "percent-encoding",
  "pin-project-lite",
  "rustls-pki-types",
@@ -1837,9 +1835,9 @@ dependencies = [
 
 [[package]]
 name = "tower-http"
-version = "0.6.4"
+version = "0.6.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0fdb0c213ca27a9f57ab69ddb290fd80d970922355b83ae380b395d3986b8a2e"
+checksum = "adc82fd73de2a9722ac5da747f12383d2bfdb93591ee6c58486e0097890f05f2"
 dependencies = [
  "bitflags 2.9.1",
  "bytes",
@@ -2375,9 +2373,9 @@ dependencies = [
 
 [[package]]
 name = "zip"
-version = "4.0.0"
+version = "4.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "153a6fff49d264c4babdcfa6b4d534747f520e56e8f0f384f3b808c4b64cc1fd"
+checksum = "95ab361742de920c5535880f89bbd611ee62002bf11341d16a5f057bb8ba6899"
 dependencies = [
  "aes",
  "arbitrary",

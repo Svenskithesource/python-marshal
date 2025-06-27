@@ -305,26 +305,26 @@ impl PyReader {
                 Some(value)
             }
             Kind::Float => {
-                let value = Object::Float(self.r_float_str()?);
+                let value = Object::Float(ordered_float::OrderedFloat(self.r_float_str()?));
 
                 Some(value)
             }
             Kind::BinaryFloat => {
-                let value = Object::Float(self.r_float_bin()?);
+                let value = Object::Float(ordered_float::OrderedFloat(self.r_float_bin()?));
 
                 Some(value)
             }
             Kind::Complex => {
                 let real = self.r_float_str()?;
                 let imag = self.r_float_str()?;
-                let value = Object::Complex(Complex::new(real, imag));
+                let value = Object::Complex(Complex::new(ordered_float::OrderedFloat(real), ordered_float::OrderedFloat(imag)));
 
                 Some(value)
             }
             Kind::BinaryComplex => {
                 let real = self.r_float_bin()?;
                 let imag = self.r_float_bin()?;
-                let value = Object::Complex(Complex::new(real, imag));
+                let value = Object::Complex(Complex::new(ordered_float::OrderedFloat(real), ordered_float::OrderedFloat(imag)));
 
                 Some(value)
             }

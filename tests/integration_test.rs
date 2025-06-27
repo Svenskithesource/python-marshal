@@ -60,6 +60,8 @@ fn test_recompile_standard_lib() {
             dump_bytes(temp_obj, Some(temp_refs), code.python_version, 4)
                 .expect("Failed to dump bytes");
 
+            assert_eq!(code, code);
+
             let mut dumped = Vec::new();
 
             python_marshal::dump_pyc(&mut dumped, code.clone()).expect("Failed to dump pyc file");
