@@ -1,20 +1,19 @@
 use crate::{
-    error::Error,
     optimize_references,
     optimizer::{Transformable, Transformer},
     Object, ObjectHashable,
 };
 
 /// Checks if there are any recursive references in the given object or the ones it references.
-struct RecursiveCheck {
-    references: Vec<Object>,
+struct RecursiveCheck<'a> {
+    references: &'a [Object],
     recursive_refs: Vec<usize>,
     /// Stack to keep track of the current references being visited.
     ref_stack: Vec<usize>,
 }
 
-impl RecursiveCheck {
-    pub fn new(references: Vec<Object>) -> Self {
+impl<'a> RecursiveCheck<'a> {
+    pub fn new(references: &'a [Object]) -> Self {
         Self {
             references,
             recursive_refs: Vec::new(),
@@ -23,7 +22,7 @@ impl RecursiveCheck {
     }
 }
 
-impl Transformer for RecursiveCheck {
+impl Transformer for RecursiveCheck<'_> {
     fn visit_LoadRef(&mut self, obj: &mut Object) -> Option<Object> {
         if let Object::LoadRef(index) = obj {
             if self.ref_stack.contains(index) {
@@ -153,34 +152,31 @@ impl Transformer for Resolver {
 }
 
 /// Returns a list of indices of all recursive references in the given object and its references.
-pub fn get_recursive_refs(obj: Object, references: Vec<Object>) -> Result<Vec<usize>, Error> {
+pub fn get_recursive_refs(obj: Object, references: &[Object]) -> Vec<usize> {
     let mut checker = RecursiveCheck::new(references);
 
     let mut obj = obj.clone();
 
     obj.transform(&mut checker);
 
-    Ok(checker.recursive_refs)
+    checker.recursive_refs
 }
 
 /// Attempts to resolve all references in the given object and its references. This will remove all unused references and resolve all non-recursively stored references.
 /// If there are any recursive references, they will be left as LoadRef or StoreRef objects and included in the returned references.
-pub fn resolve_all_refs(
-    obj: Object,
-    references: Vec<Object>,
-) -> Result<(Object, Vec<Object>), Error> {
+pub fn resolve_all_refs(obj: &Object, references: &[Object]) -> (Object, Vec<Object>) {
     let (optimized_obj, optimized_refs) = optimize_references(obj, references); // Remove all unused references
 
     // Resolve all non-recursively stored references
-    let recursive_refs = get_recursive_refs(optimized_obj.clone(), optimized_refs.clone())?;
+    let recursive_refs = get_recursive_refs(optimized_obj.clone(), &optimized_refs);
 
-    let mut resolver = Resolver::new(optimized_refs.clone(), recursive_refs);
+    let mut resolver = Resolver::new(optimized_refs, recursive_refs);
 
     let mut obj = optimized_obj.clone();
 
     obj.transform(&mut resolver);
 
-    let (obj, resolved_refs) = optimize_references(obj, resolver.references); // Clean up leftover references
+    let (obj, resolved_refs) = optimize_references(&obj, &resolver.references); // Clean up leftover references
 
-    Ok((obj, resolved_refs))
+    (obj, resolved_refs)
 }

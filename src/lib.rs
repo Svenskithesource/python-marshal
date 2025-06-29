@@ -2,6 +2,7 @@ pub mod code_objects;
 pub mod error;
 pub mod magic;
 mod optimizer;
+pub use optimizer::minimize_references; // Expose this function
 mod reader;
 pub mod resolver;
 mod writer;
@@ -217,7 +218,7 @@ impl TryFrom<Object> for ObjectHashable {
             Object::Ellipsis => Ok(ObjectHashable::Ellipsis),
             Object::Bool(b) => Ok(ObjectHashable::Bool(b)),
             Object::Long(i) => Ok(ObjectHashable::Long(i)),
-            Object::Float(f) => Ok(ObjectHashable::Float(f.into())),
+            Object::Float(f) => Ok(ObjectHashable::Float(f)),
             Object::Complex(c) => Ok(ObjectHashable::Complex(Complex { re: c.re, im: c.im })),
             Object::Bytes(b) => Ok(ObjectHashable::Bytes(b)),
             Object::String(s) => Ok(ObjectHashable::String(s)),
@@ -273,11 +274,11 @@ pub struct PycFile {
     pub references: Vec<Object>,
 }
 
-/// Remove all unused references
-pub fn optimize_references(object: Object, references: Vec<Object>) -> (Object, Vec<Object>) {
-    let mut object = object;
+/// Remove all unused references and unite duplicate ones
+pub fn optimize_references(object: &Object, references: &[Object]) -> (Object, Vec<Object>) {
+    let mut object = object.clone();
 
-    let usage_counter = get_used_references(&mut object, references.clone());
+    let usage_counter = get_used_references(&mut object, references);
 
     let mut optimizer = ReferenceOptimizer::new(references, usage_counter);
 
@@ -552,7 +553,7 @@ mod tests {
         let (kind, refs) = load_bytes(data, (3, 10).into()).unwrap();
 
         dbg!(&kind, &refs);
-        dbg!(get_recursive_refs(kind, refs).unwrap());
+        dbg!(get_recursive_refs(kind, &refs));
     }
 
     #[test]
@@ -561,7 +562,7 @@ mod tests {
         let data = b"\xdb\x03\x00\x00\x00\xe9\x01\x00\x00\x00r\x01\x00\x00\x00r\x01\x00\x00\x00";
         let (kind, refs) = load_bytes(data, (3, 10).into()).unwrap();
 
-        let (obj, refs) = resolve_all_refs(kind, refs).unwrap();
+        let (obj, refs) = resolve_all_refs(&kind, &refs);
 
         assert_eq!(
             extract_object!(Some(obj), Object::List(list) => list, Error::UnexpectedObject)
@@ -585,7 +586,7 @@ mod tests {
             Object::Long(BigInt::from(1)).into(),
         ];
 
-        let (kind, refs) = resolve_all_refs(kind, refs).unwrap();
+        let (kind, refs) = resolve_all_refs(&kind, &refs);
 
         assert_eq!(
             kind,
@@ -1038,7 +1039,7 @@ mod tests {
         let data = b"\xdb\x03\x00\x00\x00\xe9\x01\x00\x00\x00r\x01\x00\x00\x00r\x01\x00\x00\x00";
         let (kind, refs) = load_bytes(data, (3, 10).into()).unwrap();
 
-        let (kind, refs) = optimize_references(kind, refs);
+        let (kind, refs) = optimize_references(&kind, &refs);
 
         dump_bytes(kind.clone(), Some(refs.clone()), (3, 10).into(), 4).unwrap();
 
@@ -1063,7 +1064,7 @@ mod tests {
             Object::Long(BigInt::from(1)).into(),
         ];
 
-        let (kind, refs) = optimize_references(kind, refs);
+        let (kind, refs) = optimize_references(&kind, &refs);
 
         dump_bytes(kind.clone(), Some(refs.clone()), (3, 10).into(), 4).unwrap();
 

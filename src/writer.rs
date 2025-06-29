@@ -293,11 +293,37 @@ impl PyWriter {
                         // Python 3.11, 3.12, and 3.13 share the same structure
                         // https://github.com/python/cpython/blob/3.11/Python/marshal.c#L558
                         self.w_kind(Kind::Code, is_ref);
-                        self.w_long(value.argcount.try_into().map_err(|_| Error::InvalidConversion)?);
-                        self.w_long(value.posonlyargcount.try_into().map_err(|_| Error::InvalidConversion)?);
-                        self.w_long(value.kwonlyargcount.try_into().map_err(|_| Error::InvalidConversion)?);
-                        self.w_long(value.stacksize.try_into().map_err(|_| Error::InvalidConversion)?);
-                        self.w_long(value.flags.bits().try_into().map_err(|_| Error::InvalidConversion)?);
+                        self.w_long(
+                            value
+                                .argcount
+                                .try_into()
+                                .map_err(|_| Error::InvalidConversion)?,
+                        );
+                        self.w_long(
+                            value
+                                .posonlyargcount
+                                .try_into()
+                                .map_err(|_| Error::InvalidConversion)?,
+                        );
+                        self.w_long(
+                            value
+                                .kwonlyargcount
+                                .try_into()
+                                .map_err(|_| Error::InvalidConversion)?,
+                        );
+                        self.w_long(
+                            value
+                                .stacksize
+                                .try_into()
+                                .map_err(|_| Error::InvalidConversion)?,
+                        );
+                        self.w_long(
+                            value
+                                .flags
+                                .bits()
+                                .try_into()
+                                .map_err(|_| Error::InvalidConversion)?,
+                        );
                         self.w_object(Some((*value.code).clone()), false)?;
                         self.w_object(Some((*value.consts).clone()), false)?;
                         self.w_object(Some((*value.names).clone()), false)?;
@@ -306,7 +332,12 @@ impl PyWriter {
                         self.w_object(Some((*value.filename).clone()), false)?;
                         self.w_object(Some((*value.name).clone()), false)?;
                         self.w_object(Some((*value.qualname).clone()), false)?;
-                        self.w_long(value.firstlineno.try_into().map_err(|_| Error::InvalidConversion)?);
+                        self.w_long(
+                            value
+                                .firstlineno
+                                .try_into()
+                                .map_err(|_| Error::InvalidConversion)?,
+                        );
                         self.w_object(Some((*value.linetable).clone()), false)?;
                         self.w_object(Some((*value.exceptiontable).clone()), false)?;
                     }
@@ -317,7 +348,7 @@ impl PyWriter {
 
                 match reference {
                     None => {
-                        panic!("Reference not found in references list");
+                        panic!("Reference {index} not found in references list");
                     }
                     Some(_) => {
                         self.w_kind(Kind::Ref, is_ref);

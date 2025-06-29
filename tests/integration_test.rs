@@ -7,7 +7,8 @@ use std::{
 
 use num_traits::FromPrimitive;
 use python_marshal::{
-    dump_bytes, magic::PyVersion, optimize_references, resolver::resolve_all_refs, Kind, PycFile,
+    dump_bytes, magic::PyVersion, minimize_references, optimize_references,
+    resolver::resolve_all_refs, Kind, PycFile,
 };
 
 mod common;
@@ -46,14 +47,12 @@ fn test_recompile_standard_lib() {
             let code = python_marshal::load_pyc(&mut reader).expect("Failed to read pyc file");
             let original = std::fs::read(&pyc_file).expect("Failed to read pyc file");
 
-            let (temp_obj, temp_refs) =
-                optimize_references(code.clone().object, code.clone().references); // Make sure this doesn't panic
+            let (temp_obj, temp_refs) = optimize_references(&code.object, &code.references);
 
             dump_bytes(temp_obj, Some(temp_refs), code.python_version, 4)
                 .expect("Failed to dump bytes");
 
-            let (temp_obj, temp_refs) =
-                resolve_all_refs(code.clone().object, code.clone().references).unwrap(); // Make sure this doesn't panic
+            let (temp_obj, temp_refs) = resolve_all_refs(&code.object, &code.references);
 
             assert_eq!(temp_refs.len(), 0);
 
@@ -118,18 +117,18 @@ fn test_recompile_standard_lib() {
     });
 }
 
-fn get_optimized_path(original_path: &Path, version: &PyVersion) -> PathBuf {
+fn get_custom_path(original_path: &Path, version: &PyVersion, prefix: &'static str) -> PathBuf {
     let relative_path = original_path
         .strip_prefix(Path::new(DATA_PATH).join(format!("cpython-{}/Lib", version)))
         .unwrap();
     Path::new(DATA_PATH)
-        .join(format!("optimized-{}/Lib", version))
+        .join(format!("{prefix}-{version}/Lib"))
         .join(relative_path)
 }
 
 #[test]
-#[ignore = "This test will write the optimized files to disk so we can run the Python tests on them. That way we're sure the optimized files are correct."]
-fn test_write_optimized_standard_lib() {
+#[ignore = "This test will write the resolved files to disk so we can run the Python tests on them. That way we're sure the resolved files are correct."]
+fn test_write_resolved_standard_lib() {
     common::setup();
     env_logger::init();
 
@@ -146,8 +145,7 @@ fn test_write_optimized_standard_lib() {
             let code: PycFile =
                 python_marshal::load_pyc(&mut reader).expect("Failed to read pyc file");
 
-            let (temp_obj, temp_refs) =
-                resolve_all_refs(code.clone().object, code.clone().references).unwrap(); // Make sure this doesn't panic
+            let (temp_obj, temp_refs) = resolve_all_refs(&code.object, &code.references);
 
             assert_eq!(temp_refs.len(), 0);
 
@@ -159,7 +157,54 @@ fn test_write_optimized_standard_lib() {
                 references: temp_refs,
             };
 
-            let output_dir = get_optimized_path(&pyc_file.parent().unwrap(), version)
+            let output_dir = get_custom_path(&pyc_file.parent().unwrap(), version, "resolved")
+                .parent()
+                .unwrap()
+                .to_path_buf();
+
+            std::fs::create_dir_all(&output_dir).expect("Failed to create output directory");
+
+            let output_path = Path::new(&output_dir).join(pyc_file.file_name().unwrap());
+
+            let mut output_file =
+                std::fs::File::create(&output_path).expect("Failed to create output file");
+
+            python_marshal::dump_pyc(&mut output_file, dumped_pyc)
+                .expect("Failed to dump pyc file");
+        });
+    });
+}
+
+#[test]
+#[ignore = "This test will write the optimized files to disk so we can run the Python tests on them. That way we're sure the optimized files are correct."]
+fn test_write_optimized_standard_lib() {
+    common::setup();
+    env_logger::init();
+
+    common::PYTHON_VERSIONS.iter().for_each(|version| {
+        println!("Testing with Python version: {}", version);
+        let pyc_files = common::find_pyc_files(version);
+
+        pyc_files.iter().for_each(|pyc_file| {
+            delete_debug_files();
+            println!("Testing pyc file: {:?}", pyc_file);
+            let file = std::fs::File::open(&pyc_file).expect("Failed to open pyc file");
+            let mut reader = BufReader::new(file);
+
+            let code: PycFile =
+                python_marshal::load_pyc(&mut reader).expect("Failed to read pyc file");
+
+            let (temp_obj, temp_refs) = minimize_references(&code.object, code.references);
+
+            let dumped_pyc = PycFile {
+                python_version: code.python_version,
+                hash: code.hash,
+                timestamp: code.timestamp,
+                object: temp_obj,
+                references: temp_refs,
+            };
+
+            let output_dir = get_custom_path(&pyc_file.parent().unwrap(), version, "optimized")
                 .parent()
                 .unwrap()
                 .to_path_buf();

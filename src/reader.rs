@@ -472,8 +472,7 @@ impl PyReader {
                                     .map_err(|_| Error::InvalidConversion)?,
                                 lnotab,
                                 &self.references,
-                            )?)
-                            .into(),
+                            )?),
                         )
                     }
                     PyVersion {
@@ -534,8 +533,7 @@ impl PyReader {
                                 linetable,
                                 exceptiontable,
                                 &self.references,
-                            )?)
-                            .into(),
+                            )?),
                         )
                     }
                     _ => {

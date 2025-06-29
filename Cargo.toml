@@ -4,7 +4,7 @@ license = "GPL-3.0-or-later"
 description = "A Rust library for reading and writing Python marshal files."
 repository = "https://github.com/Svenskithesource/python-marshal"
 readme = "README.md"
-version = "0.3.11"
+version = "0.4.0"
 edition = "2021"
 
 [dependencies]
@@ -34,3 +34,7 @@ opt-level = 3
 # Enable only a small amount of optimization in debug mode
 [profile.dev]
 opt-level = 1
+
+[lints.clippy]
+unnecessary_unwrap = "warn"
+unnecessary_wraps = "warn"

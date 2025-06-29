@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use hashable::HashableHashSet;
 use indexmap::set::MutableValues;
 
-use crate::{Code, Object, ObjectHashable};
+use crate::{optimize_references, Code, Object, ObjectHashable};
 
 /// Trait for transforming Python objects.
 // TODO: Don't use Sized to fix the error
@@ -271,16 +271,17 @@ impl Transformable for ObjectHashable {
 }
 
 /// Removes unused references from a list of references and an object and updates the reference indices in the objects.
-pub struct ReferenceOptimizer {
-    pub references: Vec<Object>,
+/// Also unites duplicate references into one.
+pub struct ReferenceOptimizer<'a> {
+    pub references: &'a [Object],
     pub new_references: Vec<Object>,
     pub references_used: HashSet<usize>,
     /// Map of old index to new index
     reference_map: HashMap<usize, usize>,
 }
 
-impl ReferenceOptimizer {
-    pub fn new(references: Vec<Object>, references_used: HashSet<usize>) -> Self {
+impl<'a> ReferenceOptimizer<'a> {
+    pub fn new(references: &'a [Object], references_used: HashSet<usize>) -> Self {
         Self {
             references,
             new_references: Vec::new(),
@@ -290,7 +291,7 @@ impl ReferenceOptimizer {
     }
 }
 
-impl Transformer for ReferenceOptimizer {
+impl Transformer for ReferenceOptimizer<'_> {
     fn visit_LoadRef(&mut self, obj: &mut Object) -> Option<Object> {
         if let Object::LoadRef(index) = obj {
             let new_index = self.reference_map.get(index)?;
@@ -317,11 +318,22 @@ impl Transformer for ReferenceOptimizer {
                 let mut obj = self.references.get(*index)?.clone();
                 obj.transform(self); // Transform the object to ensure it is up-to-date
 
-                self.new_references.push(obj);
-                let new_index = self.new_references.len() - 1;
-                self.reference_map.insert(*index, new_index);
+                if let Some((new_index, _)) = self
+                    .new_references
+                    .iter()
+                    .enumerate()
+                    .find(|(_, reference)| *reference == &obj)
+                {
+                    // Reference with such object already exists
+                    self.reference_map.insert(*index, new_index);
+                    Some(Object::LoadRef(new_index))
+                } else {
+                    self.new_references.push(obj);
+                    let new_index = self.new_references.len() - 1;
+                    self.reference_map.insert(*index, new_index);
 
-                Some(Object::StoreRef(new_index))
+                    Some(Object::StoreRef(new_index))
+                }
             } else {
                 let mut obj = self.references.get(*index)?.clone();
                 obj.transform(self);
@@ -339,11 +351,22 @@ impl Transformer for ReferenceOptimizer {
                 let mut obj = self.references.get(*index)?.clone();
                 obj.transform(self);
 
-                self.new_references.push(obj);
-                let new_index = self.new_references.len() - 1;
-                self.reference_map.insert(*index, new_index);
+                if let Some((new_index, _)) = self
+                    .new_references
+                    .iter()
+                    .enumerate()
+                    .find(|(_, reference)| *reference == &obj)
+                {
+                    // Reference with such object already exists
+                    self.reference_map.insert(*index, new_index);
+                    Some(ObjectHashable::LoadRef(new_index))
+                } else {
+                    self.new_references.push(obj);
+                    let new_index = self.new_references.len() - 1;
+                    self.reference_map.insert(*index, new_index);
 
-                Some(ObjectHashable::StoreRef(new_index))
+                    Some(ObjectHashable::StoreRef(new_index))
+                }
             } else {
                 let mut obj = self.references.get(*index)?.clone();
                 obj.transform(self);
@@ -357,13 +380,13 @@ impl Transformer for ReferenceOptimizer {
 }
 
 /// Creates a set of used references from a given object and a list of references.
-struct ReferenceCounter {
-    pub references: Vec<Object>,
+struct ReferenceCounter<'a> {
+    pub references: &'a [Object],
     pub references_used: HashSet<usize>, // Indexes of references that are used
 }
 
-impl ReferenceCounter {
-    pub fn new(references: Vec<Object>) -> Self {
+impl<'a> ReferenceCounter<'a> {
+    pub fn new(references: &'a [Object]) -> Self {
         Self {
             references,
             references_used: HashSet::new(),
@@ -371,7 +394,7 @@ impl ReferenceCounter {
     }
 }
 
-impl Transformer for ReferenceCounter {
+impl Transformer for ReferenceCounter<'_> {
     fn visit_LoadRef(&mut self, obj: &mut Object) -> Option<Object> {
         if let Object::LoadRef(index) = obj {
             self.references_used.insert(*index);
@@ -390,7 +413,7 @@ impl Transformer for ReferenceCounter {
 
     fn visit_StoreRef(&mut self, obj: &mut Object) -> Option<Object> {
         if let Object::StoreRef(index) = obj {
-            if let Some(resolved_obj) = self.references.get_mut(*index) {
+            if let Some(resolved_obj) = self.references.get(*index) {
                 let mut temp_obj = resolved_obj.clone();
                 temp_obj.transform(self);
             }
@@ -401,7 +424,7 @@ impl Transformer for ReferenceCounter {
 
     fn visit_HashableStoreRef(&mut self, obj: &mut ObjectHashable) -> Option<ObjectHashable> {
         if let ObjectHashable::StoreRef(index) = obj {
-            if let Some(resolved_obj) = self.references.get_mut(*index) {
+            if let Some(resolved_obj) = self.references.get(*index) {
                 let mut temp_obj = resolved_obj.clone();
                 temp_obj.transform(self);
             }
@@ -411,10 +434,54 @@ impl Transformer for ReferenceCounter {
     }
 }
 
-pub fn get_used_references(obj: &mut Object, references: Vec<Object>) -> HashSet<usize> {
+pub fn get_used_references(obj: &mut Object, references: &[Object]) -> HashSet<usize> {
     let mut counter = ReferenceCounter::new(references);
 
     obj.transform(&mut counter);
 
     counter.references_used
+}
+
+/// Creates references of every object. It's used to then optimize them out later and keep the most compact version of the marshal data.
+struct ReferenceEverything {
+    pub references: Vec<Object>,
+}
+
+impl ReferenceEverything {
+    pub fn new(references: Vec<Object>) -> Self {
+        Self { references }
+    }
+}
+
+impl Transformer for ReferenceEverything {
+    fn visit(&mut self, obj: &mut Object) -> Option<Object> {
+        match obj {
+            Object::LoadRef(_) | Object::StoreRef(_) => None,
+            _ => {
+                self.references.push(obj.clone());
+                Some(Object::StoreRef(self.references.len()))
+            }
+        }
+    }
+
+    fn visit_Hashable(&mut self, obj: &mut ObjectHashable) -> Option<ObjectHashable> {
+        match obj {
+            ObjectHashable::LoadRef(_) | ObjectHashable::StoreRef(_) => None,
+            _ => {
+                self.references.push(obj.clone().into());
+                Some(ObjectHashable::StoreRef(self.references.len()))
+            }
+        }
+    }
+}
+
+/// Represent the marshal data in the most efficient way possible. Add references to every object and then optimize them.
+pub fn minimize_references(object: &Object, references: Vec<Object>) -> (Object, Vec<Object>) {
+    let mut object = object.clone();
+
+    let mut ref_all = ReferenceEverything::new(references);
+
+    object.transform(&mut ref_all);
+
+    optimize_references(&object, &ref_all.references)
 }
