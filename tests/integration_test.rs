@@ -181,11 +181,11 @@ fn test_write_optimized_standard_lib() {
     common::setup();
     env_logger::init();
 
-    common::PYTHON_VERSIONS.iter().for_each(|version| {
+    common::PYTHON_VERSIONS.par_iter().for_each(|version| {
         println!("Testing with Python version: {}", version);
         let pyc_files = common::find_pyc_files(version);
 
-        pyc_files.iter().for_each(|pyc_file| {
+        pyc_files.par_iter().for_each(|pyc_file| {
             delete_debug_files();
             println!("Testing pyc file: {:?}", pyc_file);
             let file = std::fs::File::open(&pyc_file).expect("Failed to open pyc file");
@@ -194,7 +194,11 @@ fn test_write_optimized_standard_lib() {
             let code: PycFile =
                 python_marshal::load_pyc(&mut reader).expect("Failed to read pyc file");
 
-            let (temp_obj, temp_refs) = minimize_references(&code.object, code.references);
+            let (temp_obj, temp_refs) = resolve_all_refs(&code.object, &code.references);
+
+            assert_eq!(temp_refs.len(), 0);
+
+            let (temp_obj, temp_refs) = minimize_references(&temp_obj, temp_refs);
 
             let dumped_pyc = PycFile {
                 python_version: code.python_version,

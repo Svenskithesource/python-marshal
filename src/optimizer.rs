@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use hashable::HashableHashSet;
 use indexmap::set::MutableValues;
 
-use crate::{optimize_references, Code, Object, ObjectHashable};
+use crate::{optimize_references, unite_references, Code, Object, ObjectHashable};
 
 /// Trait for transforming Python objects.
 // TODO: Don't use Sized to fix the error
@@ -271,7 +271,6 @@ impl Transformable for ObjectHashable {
 }
 
 /// Removes unused references from a list of references and an object and updates the reference indices in the objects.
-/// Also unites duplicate references into one.
 pub struct ReferenceOptimizer<'a> {
     pub references: &'a [Object],
     pub new_references: Vec<Object>,
@@ -318,24 +317,14 @@ impl Transformer for ReferenceOptimizer<'_> {
                 let mut obj = self.references.get(*index)?.clone();
                 obj.transform(self); // Transform the object to ensure it is up-to-date
 
-                if let Some((new_index, _)) = self
-                    .new_references
-                    .iter()
-                    .enumerate()
-                    .find(|(_, reference)| *reference == &obj)
-                {
-                    // Reference with such object already exists
-                    self.reference_map.insert(*index, new_index);
-                    Some(Object::LoadRef(new_index))
-                } else {
-                    self.new_references.push(obj);
-                    let new_index = self.new_references.len() - 1;
-                    self.reference_map.insert(*index, new_index);
+                self.new_references.push(obj);
+                let new_index = self.new_references.len() - 1;
+                self.reference_map.insert(*index, new_index);
 
-                    Some(Object::StoreRef(new_index))
-                }
+                Some(Object::StoreRef(new_index))
             } else {
                 let mut obj = self.references.get(*index)?.clone();
+
                 obj.transform(self);
 
                 Some(obj)
@@ -351,27 +340,108 @@ impl Transformer for ReferenceOptimizer<'_> {
                 let mut obj = self.references.get(*index)?.clone();
                 obj.transform(self);
 
-                if let Some((new_index, _)) = self
-                    .new_references
-                    .iter()
-                    .enumerate()
-                    .find(|(_, reference)| *reference == &obj)
-                {
-                    // Reference with such object already exists
-                    self.reference_map.insert(*index, new_index);
-                    Some(ObjectHashable::LoadRef(new_index))
-                } else {
-                    self.new_references.push(obj);
-                    let new_index = self.new_references.len() - 1;
-                    self.reference_map.insert(*index, new_index);
+                self.new_references.push(obj);
+                let new_index = self.new_references.len() - 1;
+                self.reference_map.insert(*index, new_index);
 
-                    Some(ObjectHashable::StoreRef(new_index))
-                }
+                Some(ObjectHashable::StoreRef(new_index))
             } else {
                 let mut obj = self.references.get(*index)?.clone();
                 obj.transform(self);
 
                 ObjectHashable::from_ref(obj, &self.new_references).ok()
+            }
+        } else {
+            None
+        }
+    }
+}
+
+/// Unites duplicate references into one
+pub struct ReferenceUniter<'a> {
+    pub references: &'a [Object],
+    pub new_references: Vec<Object>,
+    /// Map of old index to new index
+    reference_map: HashMap<usize, usize>,
+}
+
+impl<'a> ReferenceUniter<'a> {
+    pub fn new(references: &'a [Object]) -> Self {
+        Self {
+            references,
+            new_references: Vec::new(),
+            reference_map: HashMap::new(),
+        }
+    }
+}
+
+impl Transformer for ReferenceUniter<'_> {
+    fn visit_LoadRef(&mut self, obj: &mut Object) -> Option<Object> {
+        if let Object::LoadRef(index) = obj {
+            let new_index = self.reference_map.get(index)?;
+
+            Some(Object::LoadRef(*new_index))
+        } else {
+            None
+        }
+    }
+
+    fn visit_HashableLoadRef(&mut self, obj: &mut ObjectHashable) -> Option<ObjectHashable> {
+        if let ObjectHashable::LoadRef(index) = obj {
+            let new_index = self.reference_map.get(index)?;
+
+            Some(ObjectHashable::LoadRef(*new_index))
+        } else {
+            None
+        }
+    }
+
+    fn visit_StoreRef(&mut self, obj: &mut Object) -> Option<Object> {
+        if let Object::StoreRef(index) = obj {
+            let mut obj = self.references.get(*index)?.clone();
+            obj.transform(self);
+
+            if let Some((new_index, _)) = self
+                .new_references
+                .iter()
+                .enumerate()
+                .find(|(_, reference)| *reference == &obj)
+            {
+                // Reference with such object already exists
+                self.reference_map.insert(*index, new_index);
+                Some(Object::LoadRef(new_index))
+            } else {
+                self.new_references.push(obj);
+                let new_index = self.new_references.len() - 1;
+                self.reference_map.insert(*index, new_index);
+
+                Some(Object::StoreRef(new_index))
+            }
+        } else {
+            None
+        }
+    }
+
+    fn visit_HashableStoreRef(&mut self, obj: &mut ObjectHashable) -> Option<ObjectHashable> {
+        if let ObjectHashable::StoreRef(index) = obj {
+            let mut obj = self.references.get(*index)?.clone();
+            obj.transform(self);
+
+            if let Some((new_index, _)) = self
+                .new_references
+                .iter()
+                .enumerate()
+                .find(|(_, reference)| *reference == &obj)
+            {
+                // Reference with such object already exists
+                self.reference_map.insert(*index, new_index);
+                Some(ObjectHashable::LoadRef(new_index))
+            } else {
+                self.new_references.push(obj);
+                let new_index = self.new_references.len() - 1;
+                self.reference_map.insert(*index, new_index);
+
+                Some(ObjectHashable::StoreRef(new_index))
             }
         } else {
             None
@@ -413,10 +483,10 @@ impl Transformer for ReferenceCounter<'_> {
 
     fn visit_StoreRef(&mut self, obj: &mut Object) -> Option<Object> {
         if let Object::StoreRef(index) = obj {
-            if let Some(resolved_obj) = self.references.get(*index) {
-                let mut temp_obj = resolved_obj.clone();
-                temp_obj.transform(self);
-            }
+            let resolved_obj = self.references.get(*index).unwrap();
+
+            let mut temp_obj = resolved_obj.clone();
+            temp_obj.transform(self);
         }
 
         None
@@ -424,10 +494,10 @@ impl Transformer for ReferenceCounter<'_> {
 
     fn visit_HashableStoreRef(&mut self, obj: &mut ObjectHashable) -> Option<ObjectHashable> {
         if let ObjectHashable::StoreRef(index) = obj {
-            if let Some(resolved_obj) = self.references.get(*index) {
-                let mut temp_obj = resolved_obj.clone();
-                temp_obj.transform(self);
-            }
+            let resolved_obj = self.references.get(*index).unwrap();
+
+            let mut temp_obj = resolved_obj.clone();
+            temp_obj.transform(self);
         }
 
         None
@@ -438,7 +508,6 @@ pub fn get_used_references(obj: &mut Object, references: &[Object]) -> HashSet<u
     let mut counter = ReferenceCounter::new(references);
 
     obj.transform(&mut counter);
-
     counter.references_used
 }
 
@@ -455,23 +524,67 @@ impl ReferenceEverything {
 
 impl Transformer for ReferenceEverything {
     fn visit(&mut self, obj: &mut Object) -> Option<Object> {
+        // Make sure inner objects are also references
         match obj {
-            Object::LoadRef(_) | Object::StoreRef(_) => None,
-            _ => {
-                self.references.push(obj.clone());
-                Some(Object::StoreRef(self.references.len()))
+            Object::None => self.visit_None(obj),
+            Object::StopIteration => self.visit_StopIteration(obj),
+            Object::Ellipsis => self.visit_Ellipsis(obj),
+            Object::Bool(_) => self.visit_Bool(obj),
+            Object::Long(_) => self.visit_Long(obj),
+            Object::Float(_) => self.visit_Float(obj),
+            Object::Complex(_) => self.visit_Complex(obj),
+            Object::Bytes(_) => self.visit_Bytes(obj),
+            Object::String(_) => self.visit_String(obj),
+            Object::Tuple(_) => self.visit_Tuple(obj),
+            Object::List(_) => self.visit_List(obj),
+            Object::Dict(_) => self.visit_Dict(obj),
+            Object::Set(_) => self.visit_Set(obj),
+            Object::FrozenSet(_) => self.visit_FrozenSet(obj),
+            Object::Code(_) => self.visit_Code(obj),
+            Object::LoadRef(_) => {
+                return None;
             }
-        }
+            Object::StoreRef(index) => {
+                let mut obj = self.references.get(*index)?.clone(); // Update object inside references
+                obj.transform(self);
+                self.references[*index] = obj;
+
+                return None;
+            }
+        };
+
+        self.references.push(obj.clone());
+        Some(Object::StoreRef(self.references.len() - 1))
     }
 
     fn visit_Hashable(&mut self, obj: &mut ObjectHashable) -> Option<ObjectHashable> {
+        // Make sure inner objects are also references
         match obj {
-            ObjectHashable::LoadRef(_) | ObjectHashable::StoreRef(_) => None,
-            _ => {
-                self.references.push(obj.clone().into());
-                Some(ObjectHashable::StoreRef(self.references.len()))
+            ObjectHashable::None => self.visit_HashableNone(obj),
+            ObjectHashable::StopIteration => self.visit_HashableStopIteration(obj),
+            ObjectHashable::Ellipsis => self.visit_HashableEllipsis(obj),
+            ObjectHashable::Bool(_) => self.visit_HashableBool(obj),
+            ObjectHashable::Long(_) => self.visit_HashableLong(obj),
+            ObjectHashable::Float(_) => self.visit_HashableFloat(obj),
+            ObjectHashable::Complex(_) => self.visit_HashableComplex(obj),
+            ObjectHashable::Bytes(_) => self.visit_HashableBytes(obj),
+            ObjectHashable::String(_) => self.visit_HashableString(obj),
+            ObjectHashable::Tuple(_) => self.visit_HashableTuple(obj),
+            ObjectHashable::FrozenSet(_) => self.visit_HashableFrozenSet(obj),
+            ObjectHashable::LoadRef(_) => {
+                return None;
             }
-        }
+            ObjectHashable::StoreRef(index) => {
+                let mut obj = self.references.get(*index)?.clone(); // Update object inside references
+                obj.transform(self);
+                self.references[*index] = obj;
+
+                return None;
+            }
+        };
+
+        self.references.push(obj.clone().into());
+        Some(ObjectHashable::StoreRef(self.references.len() - 1))
     }
 }
 
@@ -483,5 +596,7 @@ pub fn minimize_references(object: &Object, references: Vec<Object>) -> (Object,
 
     object.transform(&mut ref_all);
 
-    optimize_references(&object, &ref_all.references)
+    let (object, references) = unite_references(&object, &ref_all.references);
+
+    optimize_references(&object, &references)
 }

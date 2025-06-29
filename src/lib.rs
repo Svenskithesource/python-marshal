@@ -22,6 +22,8 @@ use reader::PyReader;
 use std::io::{Read, Write};
 use writer::PyWriter;
 
+use crate::optimizer::ReferenceUniter;
+
 /// Represents the kind of object that is used in the Python marshal format. It is the first byte of each object in the marshal format.
 #[derive(Debug, Clone, Copy, FromPrimitive, ToPrimitive, PartialEq, Eq, Hash)]
 #[repr(u8)]
@@ -274,11 +276,23 @@ pub struct PycFile {
     pub references: Vec<Object>,
 }
 
-/// Remove all unused references and unite duplicate ones
+/// Unite duplicate references
+pub fn unite_references(object: &Object, references: &[Object]) -> (Object, Vec<Object>) {
+    let mut object = object.clone();
+
+    let mut uniter = ReferenceUniter::new(references);
+
+    object.transform(&mut uniter);
+
+    (object, uniter.new_references)
+}
+
+/// Remove all unused references
 pub fn optimize_references(object: &Object, references: &[Object]) -> (Object, Vec<Object>) {
     let mut object = object.clone();
 
     let usage_counter = get_used_references(&mut object, references);
+    // let usage_counter = get_used_references(&mut object, references);
 
     let mut optimizer = ReferenceOptimizer::new(references, usage_counter);
 
@@ -553,7 +567,7 @@ mod tests {
         let (kind, refs) = load_bytes(data, (3, 10).into()).unwrap();
 
         dbg!(&kind, &refs);
-        dbg!(get_recursive_refs(kind, &refs));
+        dbg!(get_recursive_refs(&kind, &refs));
     }
 
     #[test]
@@ -1074,5 +1088,25 @@ mod tests {
         );
 
         assert_eq!(*refs.get(0).unwrap(), Object::Long(BigInt::from(1)).into());
+    }
+
+    #[test]
+    fn test_reference_unite() {
+        let kind = Object::StoreRef(0);
+        let refs = vec![
+            Object::List(vec![Object::StoreRef(1).into(), Object::StoreRef(2).into()]).into(),
+            Object::Long(BigInt::from(1)).into(),
+            Object::Long(BigInt::from(1)).into(),
+        ];
+
+        let (kind, refs) = unite_references(&kind, &refs);
+        let (kind, refs) = optimize_references(&kind, &refs);
+
+        assert_eq!(
+            kind,
+            Object::List([Object::StoreRef(0), Object::LoadRef(0)].into())
+        );
+
+        assert_eq!(*refs.get(0).unwrap(), Object::Long(BigInt::from(1)));
     }
 }
