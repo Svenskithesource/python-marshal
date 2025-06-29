@@ -8,7 +8,7 @@ use crate::{Code, Object, ObjectHashable};
 /// Trait for transforming Python objects.
 // TODO: Don't use Sized to fix the error
 #[allow(non_snake_case, unused_variables)]
-pub trait Transformer: Sized {
+pub trait Transformer {
     /// Dispatch method to visit an object and return a transformed version. When returning `None`, the object is left unchanged.
     fn visit(&mut self, obj: &mut Object) -> Option<Object> {
         // Return None to keep the object as is
@@ -251,11 +251,11 @@ pub trait Transformer: Sized {
 }
 
 pub trait Transformable {
-    fn transform(&mut self, transformer: &mut impl Transformer);
+    fn transform(&mut self, transformer: &mut (impl Transformer + ?Sized));
 }
 
 impl Transformable for Object {
-    fn transform(&mut self, transformer: &mut impl Transformer) {
+    fn transform(&mut self, transformer: &mut (impl Transformer + ?Sized)) {
         if let Some(new_obj) = transformer.visit(self) {
             *self = new_obj;
         }
@@ -263,7 +263,7 @@ impl Transformable for Object {
 }
 
 impl Transformable for ObjectHashable {
-    fn transform(&mut self, transformer: &mut impl Transformer) {
+    fn transform(&mut self, transformer: &mut (impl Transformer + ?Sized)) {
         if let Some(new_obj) = transformer.visit_Hashable(self) {
             *self = new_obj;
         }
@@ -276,7 +276,7 @@ pub struct ReferenceOptimizer {
     pub new_references: Vec<Object>,
     pub references_used: HashSet<usize>,
     /// Map of old index to new index
-    reference_map: HashMap<usize, usize>, 
+    reference_map: HashMap<usize, usize>,
 }
 
 impl ReferenceOptimizer {
