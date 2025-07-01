@@ -19,7 +19,7 @@ use num_derive::{FromPrimitive, ToPrimitive};
 use optimizer::{get_used_references, ReferenceOptimizer, Transformable};
 use ordered_float::OrderedFloat;
 use reader::PyReader;
-use std::io::{Read, Write};
+use std::io::Read;
 use writer::PyWriter;
 
 use crate::optimizer::ReferenceUniter;
@@ -349,7 +349,7 @@ pub fn load_pyc(data: impl Read) -> Result<PycFile, Error> {
 }
 
 /// Dumps a `PycFile` to a byte stream, writing the magic number, timestamp, hash, and the marshaled object.
-pub fn dump_pyc(writer: &mut impl Write, pyc_file: PycFile) -> Result<(), Error> {
+pub fn dump_pyc(pyc_file: PycFile) -> Result<Vec<u8>, Error> {
     let mut buf = Vec::new();
     let mut py_writer = PyWriter::new(pyc_file.references, 4);
 
@@ -360,9 +360,7 @@ pub fn dump_pyc(writer: &mut impl Write, pyc_file: PycFile) -> Result<(), Error>
     buf.extend_from_slice(&u64::to_le_bytes(pyc_file.hash));
     buf.extend_from_slice(&py_writer.write_object(Some(pyc_file.object))?);
 
-    std::io::copy(&mut buf.as_slice(), writer)?; // Write the buffer to the writer
-
-    Ok(())
+    Ok(buf)
 }
 
 /// Dumps a Python object to a byte vector. Behaves like `marshal.dumps` in Python.

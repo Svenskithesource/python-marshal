@@ -61,9 +61,7 @@ fn test_recompile_standard_lib() {
 
             assert_eq!(code, code);
 
-            let mut dumped = Vec::new();
-
-            python_marshal::dump_pyc(&mut dumped, code.clone()).expect("Failed to dump pyc file");
+            let dumped = python_marshal::dump_pyc(code.clone()).expect("Failed to dump pyc file");
 
             if original != dumped {
                 let debug_output = format!("{:#?}", code);
@@ -169,8 +167,11 @@ fn test_write_resolved_standard_lib() {
             let mut output_file =
                 std::fs::File::create(&output_path).expect("Failed to create output file");
 
-            python_marshal::dump_pyc(&mut output_file, dumped_pyc)
-                .expect("Failed to dump pyc file");
+            std::io::copy(
+                &mut output_file,
+                &mut python_marshal::dump_pyc(dumped_pyc).expect("Failed to dump pyc file"),
+            )
+            .expect("Failed to write to the file");
         });
     });
 }
@@ -220,8 +221,11 @@ fn test_write_optimized_standard_lib() {
             let mut output_file =
                 std::fs::File::create(&output_path).expect("Failed to create output file");
 
-            python_marshal::dump_pyc(&mut output_file, dumped_pyc)
-                .expect("Failed to dump pyc file");
+            std::io::copy(
+                &mut output_file,
+                &mut python_marshal::dump_pyc(dumped_pyc).expect("Failed to dump pyc file"),
+            )
+            .expect("Failed to write to the file");
         });
     });
 }
