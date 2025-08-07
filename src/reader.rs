@@ -203,7 +203,10 @@ impl PyReader {
     }
 
     fn r_vec(&mut self, length: usize, kind: Kind) -> Result<Vec<Object>, Error> {
-        let mut vec = Vec::with_capacity(length);
+        let mut vec = Vec::new();
+        vec.try_reserve(length).map_err(|_| {
+            Error::InvalidData(std::io::Error::from(std::io::ErrorKind::OutOfMemory))
+        })?;
 
         for _ in 0..length {
             let obj = self.r_object()?;
