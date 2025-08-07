@@ -11,11 +11,22 @@ use crate::{
     code_objects, error::Error, Code, CodeFlags, Kind, Object, ObjectHashable, PyString, PyVersion,
 };
 
+/// On windows this is 1000.
+/// See https://github.com/python/cpython/blob/3.10/Python/marshal.c#L36
+#[cfg(windows)]
+static MAX_DEPTH: usize = 1000;
+
+/// See https://github.com/python/cpython/blob/3.10/Python/marshal.c#L38
+#[cfg(not(windows))]
+static MAX_DEPTH: usize = 2000;
+
 /// A reader for Python marshal data.
 pub struct PyReader {
     cursor: Cursor<Vec<u8>>,
     pub references: Vec<Object>,
     version: PyVersion,
+    /// The current depth of the object being read.
+    depth: usize,
 }
 
 /// Extracts an object from a result, matching it against a specific variant.
@@ -135,6 +146,7 @@ impl PyReader {
             cursor: Cursor::new(data),
             version,
             references: Vec::new(),
+            depth: 0,
         }
     }
 
@@ -233,6 +245,12 @@ impl PyReader {
     }
 
     fn r_object(&mut self) -> Result<Option<Object>, Error> {
+        self.depth += 1;
+
+        if self.depth > MAX_DEPTH {
+            return Err(Error::DepthLimitExceeded);
+        }
+
         let code = self.r_u8()?;
 
         let flag = (code & Kind::FlagRef as u8) != 0; // Check if the object is a reference (FlagRef)
@@ -317,14 +335,20 @@ impl PyReader {
             Kind::Complex => {
                 let real = self.r_float_str()?;
                 let imag = self.r_float_str()?;
-                let value = Object::Complex(Complex::new(ordered_float::OrderedFloat(real), ordered_float::OrderedFloat(imag)));
+                let value = Object::Complex(Complex::new(
+                    ordered_float::OrderedFloat(real),
+                    ordered_float::OrderedFloat(imag),
+                ));
 
                 Some(value)
             }
             Kind::BinaryComplex => {
                 let real = self.r_float_bin()?;
                 let imag = self.r_float_bin()?;
-                let value = Object::Complex(Complex::new(ordered_float::OrderedFloat(real), ordered_float::OrderedFloat(imag)));
+                let value = Object::Complex(Complex::new(
+                    ordered_float::OrderedFloat(real),
+                    ordered_float::OrderedFloat(imag),
+                ));
 
                 Some(value)
             }
@@ -447,33 +471,31 @@ impl PyReader {
 
                         let lnotab = self.r_object()?.ok_or(Error::UnexpectedNull)?.into();
 
-                        Object::Code(
-                            Code::V310(code_objects::Code310::new(
-                                argcount.try_into().map_err(|_| Error::InvalidConversion)?,
-                                posonlyargcount
-                                    .try_into()
-                                    .map_err(|_| Error::InvalidConversion)?,
-                                kwonlyargcount
-                                    .try_into()
-                                    .map_err(|_| Error::InvalidConversion)?,
-                                nlocals.try_into().map_err(|_| Error::InvalidConversion)?,
-                                stacksize.try_into().map_err(|_| Error::InvalidConversion)?,
-                                flags,
-                                code,
-                                consts,
-                                names,
-                                varnames,
-                                freevars,
-                                cellvars,
-                                filename,
-                                name,
-                                firstlineno
-                                    .try_into()
-                                    .map_err(|_| Error::InvalidConversion)?,
-                                lnotab,
-                                &self.references,
-                            )?),
-                        )
+                        Object::Code(Code::V310(code_objects::Code310::new(
+                            argcount.try_into().map_err(|_| Error::InvalidConversion)?,
+                            posonlyargcount
+                                .try_into()
+                                .map_err(|_| Error::InvalidConversion)?,
+                            kwonlyargcount
+                                .try_into()
+                                .map_err(|_| Error::InvalidConversion)?,
+                            nlocals.try_into().map_err(|_| Error::InvalidConversion)?,
+                            stacksize.try_into().map_err(|_| Error::InvalidConversion)?,
+                            flags,
+                            code,
+                            consts,
+                            names,
+                            varnames,
+                            freevars,
+                            cellvars,
+                            filename,
+                            name,
+                            firstlineno
+                                .try_into()
+                                .map_err(|_| Error::InvalidConversion)?,
+                            lnotab,
+                            &self.references,
+                        )?))
                     }
                     PyVersion {
                         major: 3,
@@ -508,33 +530,31 @@ impl PyReader {
                         let linetable = self.r_object()?.ok_or(Error::UnexpectedNull)?.into();
                         let exceptiontable = self.r_object()?.ok_or(Error::UnexpectedNull)?.into();
 
-                        Object::Code(
-                            Code::V311(code_objects::Code311::new(
-                                argcount.try_into().map_err(|_| Error::InvalidConversion)?,
-                                posonlyargcount
-                                    .try_into()
-                                    .map_err(|_| Error::InvalidConversion)?,
-                                kwonlyargcount
-                                    .try_into()
-                                    .map_err(|_| Error::InvalidConversion)?,
-                                stacksize.try_into().map_err(|_| Error::InvalidConversion)?,
-                                flags,
-                                code,
-                                consts,
-                                names,
-                                localsplusnames,
-                                localspluskinds,
-                                filename,
-                                name,
-                                qualname,
-                                firstlineno
-                                    .try_into()
-                                    .map_err(|_| Error::InvalidConversion)?,
-                                linetable,
-                                exceptiontable,
-                                &self.references,
-                            )?),
-                        )
+                        Object::Code(Code::V311(code_objects::Code311::new(
+                            argcount.try_into().map_err(|_| Error::InvalidConversion)?,
+                            posonlyargcount
+                                .try_into()
+                                .map_err(|_| Error::InvalidConversion)?,
+                            kwonlyargcount
+                                .try_into()
+                                .map_err(|_| Error::InvalidConversion)?,
+                            stacksize.try_into().map_err(|_| Error::InvalidConversion)?,
+                            flags,
+                            code,
+                            consts,
+                            names,
+                            localsplusnames,
+                            localspluskinds,
+                            filename,
+                            name,
+                            qualname,
+                            firstlineno
+                                .try_into()
+                                .map_err(|_| Error::InvalidConversion)?,
+                            linetable,
+                            exceptiontable,
+                            &self.references,
+                        )?))
                     }
                     _ => {
                         return Err(Error::UnsupportedPyVersion(self.version));
@@ -575,6 +595,8 @@ impl PyReader {
             }
             (Some(_), _) => {}
         };
+
+        self.depth -= 1;
 
         match flag {
             true => Ok(Some(Object::StoreRef(idx.ok_or(Error::InvalidStoreRef)?))),

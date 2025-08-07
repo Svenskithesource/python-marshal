@@ -5,8 +5,14 @@ use num_traits::{Signed, ToPrimitive};
 
 use crate::{error::Error, Code, Kind, Object};
 
-/// The maximum depth limit for writing objects to prevent stack overflow.
-const DEPTH_LIMIT: usize = 1000;
+/// On windows this is 1000.
+/// See https://github.com/python/cpython/blob/3.10/Python/marshal.c#L36
+#[cfg(windows)]
+static MAX_DEPTH: usize = 1000;
+
+/// See https://github.com/python/cpython/blob/3.10/Python/marshal.c#L38
+#[cfg(not(windows))]
+static MAX_DEPTH: usize = 2000;
 
 /// A writer for Python objects that serializes them into a binary format
 pub struct PyWriter {
@@ -96,7 +102,7 @@ impl PyWriter {
     fn w_object(&mut self, obj: Option<Object>, is_ref: bool) -> Result<(), Error> {
         self.depth += 1;
 
-        if self.depth > DEPTH_LIMIT {
+        if self.depth > MAX_DEPTH {
             return Err(Error::DepthLimitExceeded);
         }
 
