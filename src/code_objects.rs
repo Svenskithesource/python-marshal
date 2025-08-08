@@ -19,7 +19,7 @@ pub struct Code310 {
     pub filename:        Box<Object>, // Needs to contain PyString as a value or a reference
     pub name:            Box<Object>, // Needs to contain PyString as a value or a reference
     pub firstlineno:     u32,
-    pub lnotab:          Box<Object>, // Needs to contain Vec<u8>, as a value or a reference
+    pub linetable:          Box<Object>, // Needs to contain Vec<u8>, as a value or a reference
 }
 
 impl Code310 {
@@ -39,7 +39,7 @@ impl Code310 {
         filename: Box<Object>,
         name: Box<Object>,
         firstlineno: u32,
-        lnotab: Box<Object>,
+        linetable: Box<Object>,
         references: &[Object],
     ) -> Result<Self, Error> {
         // Ensure all corresponding values are of the correct type
@@ -64,7 +64,7 @@ impl Code310 {
 
         extract_object!(Some(resolve_object_ref!(Some((*filename).clone()), references)?), Object::String(string) => string, Error::UnexpectedObject)?;
         extract_object!(Some(resolve_object_ref!(Some((*name).clone()), references)?), Object::String(string) => string, Error::UnexpectedObject)?;
-        extract_object!(Some(resolve_object_ref!(Some((*lnotab).clone()), references)?), Object::Bytes(bytes) => bytes, Error::NullInTuple)?;
+        extract_object!(Some(resolve_object_ref!(Some((*linetable).clone()), references)?), Object::Bytes(bytes) => bytes, Error::NullInTuple)?;
 
         Ok(Self {
             argcount,
@@ -82,7 +82,7 @@ impl Code310 {
             filename,
             name,
             firstlineno,
-            lnotab,
+            linetable,
         })
     }
 }

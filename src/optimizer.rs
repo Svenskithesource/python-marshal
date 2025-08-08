@@ -133,7 +133,7 @@ pub trait Transformer {
                     code.cellvars.transform(self);
                     code.filename.transform(self);
                     code.name.transform(self);
-                    code.lnotab.transform(self);
+                    code.linetable.transform(self);
                 }
                 Code::V311(ref mut code) | Code::V312(ref mut code) | Code::V313(ref mut code) => {
                     code.code.transform(self);

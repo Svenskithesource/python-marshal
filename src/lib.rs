@@ -735,7 +735,7 @@ mod tests {
                 let inner_cellvars = extract_strings_tuple!(extract_object!(Some(resolve_object_ref!(Some((*code.cellvars).clone()), &refs).unwrap()), Object::Tuple(objs) => objs, Error::NullInTuple).unwrap(), &refs).unwrap();
                 let inner_filename = extract_object!(Some(resolve_object_ref!(Some((*code.filename).clone()), &refs).unwrap()), Object::String(string) => string, Error::UnexpectedObject).unwrap();
                 let inner_name = extract_object!(Some(resolve_object_ref!(Some((*code.name).clone()), &refs).unwrap()), Object::String(string) => string, Error::UnexpectedObject).unwrap();
-                let inner_lnotab = extract_object!(Some(resolve_object_ref!(Some((*code.lnotab).clone()), &refs).unwrap()), Object::Bytes(bytes) => bytes, Error::NullInTuple).unwrap();
+                let inner_linetable = extract_object!(Some(resolve_object_ref!(Some((*code.linetable).clone()), &refs).unwrap()), Object::Bytes(bytes) => bytes, Error::NullInTuple).unwrap();
 
                 assert_eq!(code.argcount, 2);
                 assert_eq!(code.posonlyargcount, 0);
@@ -758,7 +758,7 @@ mod tests {
                     PyString::new("f".into(), Kind::ShortAsciiInterned).into()
                 );
                 assert_eq!(code.firstlineno, 1);
-                assert_eq!(inner_lnotab.len(), 2);
+                assert_eq!(inner_linetable.len(), 2);
             }
             _ => panic!("Invalid code object"),
         }
@@ -1029,7 +1029,7 @@ mod tests {
             filename: Object::String(PyString::from("<stdin>".to_string()).into()).into(),
             name: Object::String(PyString::from("f".to_string()).into()).into(),
             firstlineno: 1,
-            lnotab: Object::Bytes([14, 0].to_vec().into()).into(),
+            linetable: Object::Bytes([14, 0].to_vec().into()).into(),
         });
         let dumped = dump_bytes(Object::Code(object.into()), None, (3, 10).into(), 4).unwrap();
 

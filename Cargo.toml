@@ -4,7 +4,7 @@ license = "GPL-3.0-or-later"
 description = "A Rust library for reading and writing Python marshal files."
 repository = "https://github.com/Svenskithesource/python-marshal"
 readme = "README.md"
-version = "0.4.4"
+version = "0.4.5"
 edition = "2021"
 
 [dependencies]

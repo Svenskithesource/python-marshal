@@ -472,7 +472,7 @@ impl PyReader {
 
                         let firstlineno = self.r_long()?;
 
-                        let lnotab = self.r_object()?.ok_or(Error::UnexpectedNull)?.into();
+                        let linetable = self.r_object()?.ok_or(Error::UnexpectedNull)?.into();
 
                         Object::Code(Code::V310(code_objects::Code310::new(
                             argcount.try_into().map_err(|_| Error::InvalidConversion)?,
@@ -496,7 +496,7 @@ impl PyReader {
                             firstlineno
                                 .try_into()
                                 .map_err(|_| Error::InvalidConversion)?,
-                            lnotab,
+                            linetable,
                             &self.references,
                         )?))
                     }

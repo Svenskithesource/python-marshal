@@ -293,7 +293,7 @@ impl PyWriter {
                                 .try_into()
                                 .map_err(|_| Error::InvalidConversion)?,
                         );
-                        self.w_object(Some((*value.lnotab).clone()), false)?;
+                        self.w_object(Some((*value.linetable).clone()), false)?;
                     }
                     Code::V311(value) | Code::V312(value) | Code::V313(value) => {
                         // Python 3.11, 3.12, and 3.13 share the same structure
