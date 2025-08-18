@@ -533,31 +533,98 @@ impl PyReader {
                         let linetable = self.r_object()?.ok_or(Error::UnexpectedNull)?.into();
                         let exceptiontable = self.r_object()?.ok_or(Error::UnexpectedNull)?.into();
 
-                        Object::Code(Code::V311(code_objects::Code311::new(
-                            argcount.try_into().map_err(|_| Error::InvalidConversion)?,
-                            posonlyargcount
-                                .try_into()
-                                .map_err(|_| Error::InvalidConversion)?,
-                            kwonlyargcount
-                                .try_into()
-                                .map_err(|_| Error::InvalidConversion)?,
-                            stacksize.try_into().map_err(|_| Error::InvalidConversion)?,
-                            flags,
-                            code,
-                            consts,
-                            names,
-                            localsplusnames,
-                            localspluskinds,
-                            filename,
-                            name,
-                            qualname,
-                            firstlineno
-                                .try_into()
-                                .map_err(|_| Error::InvalidConversion)?,
-                            linetable,
-                            exceptiontable,
-                            &self.references,
-                        )?))
+                        let inner_code = match self.version {
+                            PyVersion {
+                                major: 3,
+                                minor: 11,
+                                ..
+                            } => Object::Code(Code::V311(code_objects::Code311::new(
+                                argcount.try_into().map_err(|_| Error::InvalidConversion)?,
+                                posonlyargcount
+                                    .try_into()
+                                    .map_err(|_| Error::InvalidConversion)?,
+                                kwonlyargcount
+                                    .try_into()
+                                    .map_err(|_| Error::InvalidConversion)?,
+                                stacksize.try_into().map_err(|_| Error::InvalidConversion)?,
+                                flags,
+                                code,
+                                consts,
+                                names,
+                                localsplusnames,
+                                localspluskinds,
+                                filename,
+                                name,
+                                qualname,
+                                firstlineno
+                                    .try_into()
+                                    .map_err(|_| Error::InvalidConversion)?,
+                                linetable,
+                                exceptiontable,
+                                &self.references,
+                            )?)),
+                            PyVersion {
+                                major: 3,
+                                minor: 12,
+                                ..
+                            } => Object::Code(Code::V312(code_objects::Code312::new(
+                                argcount.try_into().map_err(|_| Error::InvalidConversion)?,
+                                posonlyargcount
+                                    .try_into()
+                                    .map_err(|_| Error::InvalidConversion)?,
+                                kwonlyargcount
+                                    .try_into()
+                                    .map_err(|_| Error::InvalidConversion)?,
+                                stacksize.try_into().map_err(|_| Error::InvalidConversion)?,
+                                flags,
+                                code,
+                                consts,
+                                names,
+                                localsplusnames,
+                                localspluskinds,
+                                filename,
+                                name,
+                                qualname,
+                                firstlineno
+                                    .try_into()
+                                    .map_err(|_| Error::InvalidConversion)?,
+                                linetable,
+                                exceptiontable,
+                                &self.references,
+                            )?)),
+                            PyVersion {
+                                major: 3,
+                                minor: 13,
+                                ..
+                            } => Object::Code(Code::V312(code_objects::Code312::new(
+                                argcount.try_into().map_err(|_| Error::InvalidConversion)?,
+                                posonlyargcount
+                                    .try_into()
+                                    .map_err(|_| Error::InvalidConversion)?,
+                                kwonlyargcount
+                                    .try_into()
+                                    .map_err(|_| Error::InvalidConversion)?,
+                                stacksize.try_into().map_err(|_| Error::InvalidConversion)?,
+                                flags,
+                                code,
+                                consts,
+                                names,
+                                localsplusnames,
+                                localspluskinds,
+                                filename,
+                                name,
+                                qualname,
+                                firstlineno
+                                    .try_into()
+                                    .map_err(|_| Error::InvalidConversion)?,
+                                linetable,
+                                exceptiontable,
+                                &self.references,
+                            )?)),
+                            _ => unreachable!(),
+                        };
+
+                        inner_code
                     }
                     _ => {
                         return Err(Error::UnsupportedPyVersion(self.version));

@@ -5,6 +5,61 @@ use num_traits::{Signed, ToPrimitive};
 
 use crate::{error::Error, Code, Kind, Object};
 
+/// Macro to write Code31x objects (Python 3.11, 3.12, 3.13) which share the same structure
+macro_rules! w_code311 {
+    ($self:ident, $value:ident, $is_ref:ident) => {
+        // https://github.com/python/cpython/blob/3.11/Python/marshal.c#L558
+        $self.w_kind(Kind::Code, $is_ref);
+        $self.w_long(
+            $value
+                .argcount
+                .try_into()
+                .map_err(|_| Error::InvalidConversion)?,
+        );
+        $self.w_long(
+            $value
+                .posonlyargcount
+                .try_into()
+                .map_err(|_| Error::InvalidConversion)?,
+        );
+        $self.w_long(
+            $value
+                .kwonlyargcount
+                .try_into()
+                .map_err(|_| Error::InvalidConversion)?,
+        );
+        $self.w_long(
+            $value
+                .stacksize
+                .try_into()
+                .map_err(|_| Error::InvalidConversion)?,
+        );
+        $self.w_long(
+            $value
+                .flags
+                .bits()
+                .try_into()
+                .map_err(|_| Error::InvalidConversion)?,
+        );
+        $self.w_object(Some((*$value.code).clone()), false)?;
+        $self.w_object(Some((*$value.consts).clone()), false)?;
+        $self.w_object(Some((*$value.names).clone()), false)?;
+        $self.w_object(Some((*$value.localsplusnames).clone()), false)?;
+        $self.w_object(Some((*$value.localspluskinds).clone()), false)?;
+        $self.w_object(Some((*$value.filename).clone()), false)?;
+        $self.w_object(Some((*$value.name).clone()), false)?;
+        $self.w_object(Some((*$value.qualname).clone()), false)?;
+        $self.w_long(
+            $value
+                .firstlineno
+                .try_into()
+                .map_err(|_| Error::InvalidConversion)?,
+        );
+        $self.w_object(Some((*$value.linetable).clone()), false)?;
+        $self.w_object(Some((*$value.exceptiontable).clone()), false)?;
+    };
+}
+
 /// On windows this is 1000.
 /// See https://github.com/python/cpython/blob/3.10/Python/marshal.c#L36
 #[cfg(windows)]
@@ -295,57 +350,14 @@ impl PyWriter {
                         );
                         self.w_object(Some((*value.linetable).clone()), false)?;
                     }
-                    Code::V311(value) | Code::V312(value) | Code::V313(value) => {
-                        // Python 3.11, 3.12, and 3.13 share the same structure
-                        // https://github.com/python/cpython/blob/3.11/Python/marshal.c#L558
-                        self.w_kind(Kind::Code, is_ref);
-                        self.w_long(
-                            value
-                                .argcount
-                                .try_into()
-                                .map_err(|_| Error::InvalidConversion)?,
-                        );
-                        self.w_long(
-                            value
-                                .posonlyargcount
-                                .try_into()
-                                .map_err(|_| Error::InvalidConversion)?,
-                        );
-                        self.w_long(
-                            value
-                                .kwonlyargcount
-                                .try_into()
-                                .map_err(|_| Error::InvalidConversion)?,
-                        );
-                        self.w_long(
-                            value
-                                .stacksize
-                                .try_into()
-                                .map_err(|_| Error::InvalidConversion)?,
-                        );
-                        self.w_long(
-                            value
-                                .flags
-                                .bits()
-                                .try_into()
-                                .map_err(|_| Error::InvalidConversion)?,
-                        );
-                        self.w_object(Some((*value.code).clone()), false)?;
-                        self.w_object(Some((*value.consts).clone()), false)?;
-                        self.w_object(Some((*value.names).clone()), false)?;
-                        self.w_object(Some((*value.localsplusnames).clone()), false)?;
-                        self.w_object(Some((*value.localspluskinds).clone()), false)?;
-                        self.w_object(Some((*value.filename).clone()), false)?;
-                        self.w_object(Some((*value.name).clone()), false)?;
-                        self.w_object(Some((*value.qualname).clone()), false)?;
-                        self.w_long(
-                            value
-                                .firstlineno
-                                .try_into()
-                                .map_err(|_| Error::InvalidConversion)?,
-                        );
-                        self.w_object(Some((*value.linetable).clone()), false)?;
-                        self.w_object(Some((*value.exceptiontable).clone()), false)?;
+                    Code::V311(value) => {
+                        w_code311!(self, value, is_ref);
+                    }
+                    Code::V312(value) => {
+                        w_code311!(self, value, is_ref);
+                    }
+                    Code::V313(value) => {
+                        w_code311!(self, value, is_ref);
                     }
                 }
             }

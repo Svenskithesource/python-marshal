@@ -101,10 +101,10 @@ pub enum Code {
     V310(code_objects::Code310),
     // Contains the code object for Python 3.11
     V311(code_objects::Code311),
-    // Contains the code object for Python 3.12 which is exactly the same as 3.11 so we use the same struct
-    V312(code_objects::Code311),
-    // Contains the code object for Python 3.13 which is exactly the same as 3.11 so we use the same struct
-    V313(code_objects::Code311),
+    // Contains the code object for Python 3.12 which is exactly the same as 3.11 with a different struct name
+    V312(code_objects::Code312),
+    // Contains the code object for Python 3.13 which is exactly the same as 3.11 with a different struct name
+    V313(code_objects::Code313),
 }
 
 /// Represents a Python string object. Python supports many kinds of strings, this is why we use BString to represent the value.

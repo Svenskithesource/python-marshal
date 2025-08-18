@@ -135,7 +135,31 @@ pub trait Transformer {
                     code.name.transform(self);
                     code.linetable.transform(self);
                 }
-                Code::V311(ref mut code) | Code::V312(ref mut code) | Code::V313(ref mut code) => {
+                Code::V311(ref mut code) => {
+                    code.code.transform(self);
+                    code.consts.transform(self);
+                    code.names.transform(self);
+                    code.localsplusnames.transform(self);
+                    code.localspluskinds.transform(self);
+                    code.filename.transform(self);
+                    code.name.transform(self);
+                    code.qualname.transform(self);
+                    code.linetable.transform(self);
+                    code.exceptiontable.transform(self);
+                }
+                Code::V312(ref mut code) => {
+                    code.code.transform(self);
+                    code.consts.transform(self);
+                    code.names.transform(self);
+                    code.localsplusnames.transform(self);
+                    code.localspluskinds.transform(self);
+                    code.filename.transform(self);
+                    code.name.transform(self);
+                    code.qualname.transform(self);
+                    code.linetable.transform(self);
+                    code.exceptiontable.transform(self);
+                }
+                Code::V313(ref mut code) => {
                     code.code.transform(self);
                     code.consts.transform(self);
                     code.names.transform(self);
