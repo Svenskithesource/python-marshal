@@ -596,7 +596,7 @@ impl PyReader {
                                 major: 3,
                                 minor: 13,
                                 ..
-                            } => Object::Code(Code::V312(code_objects::Code312::new(
+                            } => Object::Code(Code::V313(code_objects::Code313::new(
                                 argcount.try_into().map_err(|_| Error::InvalidConversion)?,
                                 posonlyargcount
                                     .try_into()
