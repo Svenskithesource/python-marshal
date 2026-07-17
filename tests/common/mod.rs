@@ -54,11 +54,10 @@ fn init_repo(version: &PyVersion) {
                 if file.is_dir() {
                     fs::create_dir_all(&outpath).unwrap();
                 } else {
-                    if let Some(parent) = outpath.parent() {
-                        if !parent.exists() {
+                    if let Some(parent) = outpath.parent()
+                        && !parent.exists() {
                             fs::create_dir_all(parent).unwrap();
                         }
-                    }
 
                     let mut outfile = fs::File::create(&outpath).unwrap();
                     std::io::copy(&mut file, &mut outfile).unwrap();
@@ -156,7 +155,7 @@ fn find_pyc_files_in_dir(dir: &Path) -> Vec<PathBuf> {
 
         if path.is_dir() {
             pyc_files.extend(find_pyc_files_in_dir(&path));
-        } else if path.extension().map_or(false, |ext| ext == "pyc") {
+        } else if path.extension().is_some_and(|ext| ext == "pyc") {
             pyc_files.push(path);
         }
     }

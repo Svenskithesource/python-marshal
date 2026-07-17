@@ -41,11 +41,11 @@ fn test_recompile_standard_lib() {
         pyc_files.par_iter().for_each(|pyc_file| {
             delete_debug_files();
             println!("Testing pyc file: {:?}", pyc_file);
-            let file = std::fs::File::open(&pyc_file).expect("Failed to open pyc file");
+            let file = std::fs::File::open(pyc_file).expect("Failed to open pyc file");
             let mut reader = BufReader::new(file);
 
             let code = python_marshal::load_pyc(&mut reader).expect("Failed to read pyc file");
-            let original = std::fs::read(&pyc_file).expect("Failed to read pyc file");
+            let original = std::fs::read(pyc_file).expect("Failed to read pyc file");
 
             let (temp_obj, temp_refs) = optimize_references(&code.object, &code.references);
 
@@ -78,17 +78,13 @@ fn test_recompile_standard_lib() {
                             i,
                             a,
                             Kind::from_u8(a & !(Kind::FlagRef as u8))
-                                .unwrap_or_else(|| Kind::Unknown),
+                                .unwrap_or(Kind::Unknown),
                             b,
                             Kind::from_u8(b & !(Kind::FlagRef as u8))
-                                .unwrap_or_else(|| Kind::Unknown)
+                                .unwrap_or(Kind::Unknown)
                         );
 
-                        let start = if *i >= CONTEXT_SIZE {
-                            *i - CONTEXT_SIZE
-                        } else {
-                            0
-                        };
+                        let start = (*i).saturating_sub(CONTEXT_SIZE);
                         let end = if *i + CONTEXT_SIZE < original.len() {
                             *i + CONTEXT_SIZE
                         } else {
@@ -101,10 +97,10 @@ fn test_recompile_standard_lib() {
                                 j,
                                 original[j],
                                 Kind::from_u8(original[j] & !(Kind::FlagRef as u8))
-                                    .unwrap_or_else(|| Kind::Unknown),
+                                    .unwrap_or(Kind::Unknown),
                                 dumped[j],
                                 Kind::from_u8(dumped[j] & !(Kind::FlagRef as u8))
-                                    .unwrap_or_else(|| Kind::Unknown)
+                                    .unwrap_or(Kind::Unknown)
                             );
                         }
 
@@ -137,7 +133,7 @@ fn test_write_resolved_standard_lib() {
         pyc_files.par_iter().for_each(|pyc_file| {
             delete_debug_files();
             println!("Testing pyc file: {:?}", pyc_file);
-            let file = std::fs::File::open(&pyc_file).expect("Failed to open pyc file");
+            let file = std::fs::File::open(pyc_file).expect("Failed to open pyc file");
             let mut reader = BufReader::new(file);
 
             let code: PycFile =
@@ -154,7 +150,7 @@ fn test_write_resolved_standard_lib() {
                 references: temp_refs,
             };
 
-            let output_dir = get_custom_path(&pyc_file.parent().unwrap(), version, "resolved")
+            let output_dir = get_custom_path(pyc_file.parent().unwrap(), version, "resolved")
                 .parent()
                 .unwrap()
                 .to_path_buf();
@@ -188,7 +184,7 @@ fn test_write_optimized_standard_lib() {
         pyc_files.par_iter().for_each(|pyc_file| {
             delete_debug_files();
             println!("Testing pyc file: {:?}", pyc_file);
-            let file = std::fs::File::open(&pyc_file).expect("Failed to open pyc file");
+            let file = std::fs::File::open(pyc_file).expect("Failed to open pyc file");
             let mut reader = BufReader::new(file);
 
             let code: PycFile =
@@ -207,7 +203,7 @@ fn test_write_optimized_standard_lib() {
                 references: temp_refs,
             };
 
-            let output_dir = get_custom_path(&pyc_file.parent().unwrap(), version, "optimized")
+            let output_dir = get_custom_path(pyc_file.parent().unwrap(), version, "optimized")
                 .parent()
                 .unwrap()
                 .to_path_buf();
