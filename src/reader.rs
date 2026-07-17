@@ -533,7 +533,9 @@ impl PyReader {
                         let linetable = self.r_object()?.ok_or(Error::UnexpectedNull)?.into();
                         let exceptiontable = self.r_object()?.ok_or(Error::UnexpectedNull)?.into();
 
-                        let inner_code = match self.version {
+                        
+
+                        match self.version {
                             PyVersion {
                                 major: 3,
                                 minor: 11,
@@ -622,9 +624,7 @@ impl PyReader {
                                 &self.references,
                             )?)),
                             _ => unreachable!(),
-                        };
-
-                        inner_code
+                        }
                     }
                     _ => {
                         return Err(Error::UnsupportedPyVersion(self.version));

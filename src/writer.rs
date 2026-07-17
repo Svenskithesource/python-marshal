@@ -167,7 +167,7 @@ impl PyWriter {
             Some(Object::StopIteration) => self.w_kind(Kind::StopIteration, is_ref),
             Some(Object::Ellipsis) => self.w_kind(Kind::Ellipsis, is_ref),
             Some(Object::Bool(value)) => {
-                self.w_kind({ if value { Kind::True } else { Kind::False } }, is_ref);
+                self.w_kind(if value { Kind::True } else { Kind::False } , is_ref);
             }
             Some(Object::Long(num)) => {
                 let num = num.clone();

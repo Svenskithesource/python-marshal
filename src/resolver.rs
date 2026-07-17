@@ -112,14 +112,13 @@ impl Transformer for Resolver {
     }
 
     fn visit_StoreRef(&mut self, obj: &mut Object) -> Option<Object> {
-        if let Object::StoreRef(index) = obj {
-            if !self.recursive_refs.contains(index) {
+        if let Object::StoreRef(index) = obj
+            && !self.recursive_refs.contains(index) {
                 let mut obj = self.references[*index].clone();
                 obj.transform(self);
 
                 self.references[*index] = obj;
             }
-        }
 
         None
     }
@@ -137,14 +136,13 @@ impl Transformer for Resolver {
     }
 
     fn visit_HashableStoreRef(&mut self, obj: &mut ObjectHashable) -> Option<ObjectHashable> {
-        if let ObjectHashable::StoreRef(index) = obj {
-            if !self.recursive_refs.contains(index) {
+        if let ObjectHashable::StoreRef(index) = obj
+            && !self.recursive_refs.contains(index) {
                 let mut obj = self.references[*index].clone();
                 obj.transform(self);
 
                 self.references[*index] = obj;
             }
-        }
 
         None
     }

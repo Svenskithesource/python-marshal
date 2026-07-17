@@ -9,7 +9,6 @@ mod writer;
 
 use bitflags::bitflags;
 use bstr::BString;
-use core::time;
 use error::Error;
 use hashable::HashableHashSet;
 use indexmap::{IndexMap, IndexSet};
@@ -480,7 +479,7 @@ mod tests {
         let (kind, _) = load_bytes(data, (3, 10).into()).unwrap();
         assert_eq!(
             extract_object!(Some(kind), Object::Long(num) => num, Error::UnexpectedObject).unwrap(),
-            BigInt::from(1).into()
+            BigInt::from(1)
         );
 
         // 4294967295
@@ -489,7 +488,7 @@ mod tests {
 
         assert_eq!(
             extract_object!(Some(kind), Object::Long(num) => num, Error::UnexpectedObject).unwrap(),
-            BigInt::from(4294967295u32).into()
+            BigInt::from(4294967295u32)
         );
     }
 
@@ -537,7 +536,7 @@ mod tests {
         assert_eq!(
             extract_object!(Some(kind), Object::String(string) => string, Error::UnexpectedObject)
                 .unwrap(),
-            PyString::new("test".into(), Kind::ShortAsciiInterned).into()
+            PyString::new("test".into(), Kind::ShortAsciiInterned)
         );
 
         // "\xe9"
@@ -547,7 +546,7 @@ mod tests {
         assert_eq!(
             extract_object!(Some(kind), Object::String(string) => string, Error::UnexpectedObject)
                 .unwrap(),
-            PyString::new(BString::new([237, 178, 128].to_vec()), Kind::Unicode).into()
+            PyString::new(BString::new([237, 178, 128].to_vec()), Kind::Unicode)
         );
     }
 
@@ -577,8 +576,8 @@ mod tests {
             )
             .unwrap(),
             vec![
-                PyString::new("a".into(), Kind::ShortAsciiInterned).into(),
-                PyString::new("b".into(), Kind::ShortAsciiInterned).into()
+                PyString::new("a".into(), Kind::ShortAsciiInterned),
+                PyString::new("b".into(), Kind::ShortAsciiInterned)
             ]
         );
     }
@@ -607,8 +606,8 @@ mod tests {
             )
             .unwrap(),
             vec![
-                PyString::new("a".into(), Kind::ShortAsciiInterned).into(),
-                PyString::new("b".into(), Kind::ShortAsciiInterned).into()
+                PyString::new("a".into(), Kind::ShortAsciiInterned),
+                PyString::new("b".into(), Kind::ShortAsciiInterned)
             ]
         );
     }
@@ -628,15 +627,14 @@ mod tests {
             resolve_object_ref!(Some(kind.clone()), refs).unwrap(),
             Object::List(
                 vec![
-                    Object::StoreRef(1).into(),
-                    Object::LoadRef(1).into(),
-                    Object::LoadRef(1).into()
+                    Object::StoreRef(1),
+                    Object::LoadRef(1),
+                    Object::LoadRef(1)
                 ]
-                .into()
             )
         );
 
-        assert_eq!(*refs.get(1).unwrap(), Object::Long(BigInt::from(1)).into());
+        assert_eq!(*refs.get(1).unwrap(), Object::Long(BigInt::from(1)));
 
         // Recursive reference
         let data = b"\xdb\x01\x00\x00\x00r\x00\x00\x00\x00";
@@ -657,10 +655,7 @@ mod tests {
 
         assert_eq!(
             extract_object!(Some(obj), Object::List(list) => list, Error::UnexpectedObject)
-                .unwrap()
-                .iter()
-                .map(|o| o.clone())
-                .collect::<Vec<_>>(),
+                .unwrap().to_vec(),
             vec![
                 Object::Long(BigInt::from(1)),
                 Object::Long(BigInt::from(1)),
@@ -672,9 +667,9 @@ mod tests {
 
         let kind = Object::StoreRef(0);
         let refs = vec![
-            Object::List(vec![Object::StoreRef(1).into(), Object::LoadRef(1).into()]).into(),
+            Object::List(vec![Object::StoreRef(1), Object::LoadRef(1)]),
             Object::StoreRef(2),
-            Object::Long(BigInt::from(1)).into(),
+            Object::Long(BigInt::from(1)),
         ];
 
         let (kind, refs) = resolve_all_refs(&kind, &refs);
@@ -683,10 +678,9 @@ mod tests {
             kind,
             Object::List(
                 vec![
-                    Object::Long(BigInt::from(1)).into(),
-                    Object::Long(BigInt::from(1)).into()
+                    Object::Long(BigInt::from(1)),
+                    Object::Long(BigInt::from(1))
                 ]
-                .into()
             )
         );
 
@@ -719,12 +713,12 @@ mod tests {
             {
                 let mut map = HashMap::new();
                 map.insert(
-                    PyString::new("a".into(), Kind::ShortAsciiInterned).into(),
-                    PyString::new("b".into(), Kind::ShortAsciiInterned).into(),
+                    PyString::new("a".into(), Kind::ShortAsciiInterned),
+                    PyString::new("b".into(), Kind::ShortAsciiInterned),
                 );
                 map.insert(
-                    PyString::new("c".into(), Kind::ShortAsciiInterned).into(),
-                    PyString::new("d".into(), Kind::ShortAsciiInterned).into(),
+                    PyString::new("c".into(), Kind::ShortAsciiInterned),
+                    PyString::new("d".into(), Kind::ShortAsciiInterned),
                 );
                 map
             }
@@ -742,7 +736,7 @@ mod tests {
                     .unwrap()
             )
             .unwrap(),
-            HashSet::new().into()
+            HashSet::new()
         );
 
         // Set with two elements {"a", "b"}
@@ -756,8 +750,8 @@ mod tests {
             .unwrap(),
             {
                 let mut set = HashSet::new();
-                set.insert(PyString::new("a".into(), Kind::ShortAsciiInterned).into());
-                set.insert(PyString::new("b".into(), Kind::ShortAsciiInterned).into());
+                set.insert(PyString::new("a".into(), Kind::ShortAsciiInterned));
+                set.insert(PyString::new("b".into(), Kind::ShortAsciiInterned));
                 set
             }
         );
@@ -788,8 +782,8 @@ mod tests {
             .unwrap(),
             {
                 let mut set = HashSet::new();
-                set.insert(PyString::new("a".into(), Kind::ShortAsciiInterned).into());
-                set.insert(PyString::new("b".into(), Kind::ShortAsciiInterned).into());
+                set.insert(PyString::new("a".into(), Kind::ShortAsciiInterned));
+                set.insert(PyString::new("b".into(), Kind::ShortAsciiInterned));
                 set
             }
         );
@@ -850,11 +844,11 @@ mod tests {
                 assert_eq!(inner_cellvars.len(), 0);
                 assert_eq!(
                     inner_filename,
-                    PyString::new("<stdin>".into(), Kind::ShortAscii).into()
+                    PyString::new("<stdin>".into(), Kind::ShortAscii)
                 );
                 assert_eq!(
                     inner_name,
-                    PyString::new("f".into(), Kind::ShortAsciiInterned).into()
+                    PyString::new("f".into(), Kind::ShortAsciiInterned)
                 );
                 assert_eq!(code.firstlineno, 1);
                 assert_eq!(inner_linetable.len(), 2);
@@ -912,11 +906,11 @@ mod tests {
                 assert_eq!(inner_localspluskinds.len(), 2);
                 assert_eq!(
                     inner_filename,
-                    PyString::new("<stdin>".into(), Kind::ShortAscii).into()
+                    PyString::new("<stdin>".into(), Kind::ShortAscii)
                 );
                 assert_eq!(
                     inner_name,
-                    PyString::new("f".into(), Kind::ShortAsciiInterned).into()
+                    PyString::new("f".into(), Kind::ShortAsciiInterned)
                 );
                 assert_eq!(code.firstlineno, 1);
                 assert_eq!(inner_linetable.len(), 23);
@@ -943,13 +937,13 @@ mod tests {
     fn test_dump_long() {
         // 1
         let data = b"i\x01\x00\x00\x00";
-        let object = Object::Long(BigInt::from(1).into());
+        let object = Object::Long(BigInt::from(1));
         let dumped = dump_bytes(object, None, (3, 10).into(), 4).unwrap();
         assert_eq!(data.to_vec(), dumped);
 
         // 4294967295
         let data = b"l\x03\x00\x00\x00\xff\x7f\xff\x7f\x03\x00";
-        let object = Object::Long(BigInt::from(4294967295u32).into());
+        let object = Object::Long(BigInt::from(4294967295u32));
         let dumped = dump_bytes(object, None, (3, 10).into(), 4).unwrap();
         assert_eq!(data.to_vec(), dumped);
     }
@@ -976,7 +970,7 @@ mod tests {
     fn test_dump_bytes() {
         // b"test"
         let data = b"s\x04\x00\x00\x00test";
-        let object = Object::Bytes("test".as_bytes().to_vec().into());
+        let object = Object::Bytes("test".as_bytes().to_vec());
         let dumped = dump_bytes(object, None, (3, 10).into(), 4).unwrap();
         assert_eq!(data.to_vec(), dumped);
     }
@@ -985,14 +979,14 @@ mod tests {
     fn test_dump_string() {
         // "test"
         let data = b"z\x04test";
-        let object = Object::String(PyString::from("test".to_string()).into());
+        let object = Object::String(PyString::from("test".to_string()));
         let dumped = dump_bytes(object, None, (3, 10).into(), 4).unwrap();
         assert_eq!(data.to_vec(), dumped);
 
         // "\xe9"
         let data = b"u\x03\x00\x00\x00\xed\xb2\x80";
         let object = Object::String(
-            PyString::new(BString::new([237, 178, 128].to_vec()), Kind::Unicode).into(),
+            PyString::new(BString::new([237, 178, 128].to_vec()), Kind::Unicode),
         );
         let dumped = dump_bytes(object, None, (3, 10).into(), 4).unwrap();
         assert_eq!(data.to_vec(), dumped);
@@ -1002,7 +996,7 @@ mod tests {
     fn test_dump_tuple() {
         // Empty tuple
         let data = b")\x00";
-        let object = Object::Tuple(vec![].into());
+        let object = Object::Tuple(vec![]);
         let dumped = dump_bytes(object, None, (3, 10).into(), 4).unwrap();
         assert_eq!(data.to_vec(), dumped);
 
@@ -1010,10 +1004,9 @@ mod tests {
         let data = b")\x02z\x01az\x01b";
         let object = Object::Tuple(
             vec![
-                Object::String(PyString::from("a".to_string()).into()).into(),
-                Object::String(PyString::from("b".to_string()).into()).into(),
-            ]
-            .into(),
+                Object::String(PyString::from("a".to_string())),
+                Object::String(PyString::from("b".to_string())),
+            ],
         );
         let dumped = dump_bytes(object, None, (3, 10).into(), 4).unwrap();
         assert_eq!(data.to_vec(), dumped);
@@ -1023,7 +1016,7 @@ mod tests {
     fn test_dump_list() {
         // Empty list
         let data = b"[\x00\x00\x00\x00";
-        let object = Object::List(vec![].into());
+        let object = Object::List(vec![]);
         let dumped = dump_bytes(object, None, (3, 10).into(), 4).unwrap();
         assert_eq!(data.to_vec(), dumped);
 
@@ -1031,10 +1024,9 @@ mod tests {
         let data = b"[\x02\x00\x00\x00z\x01az\x01b";
         let object = Object::List(
             vec![
-                Object::String(PyString::from("a".to_string()).into()).into(),
-                Object::String(PyString::from("b".to_string()).into()).into(),
-            ]
-            .into(),
+                Object::String(PyString::from("a".to_string())),
+                Object::String(PyString::from("b".to_string())),
+            ],
         );
         dbg!(&object);
         let dumped = dump_bytes(object, None, (3, 10).into(), 4).unwrap();
@@ -1045,7 +1037,7 @@ mod tests {
     fn test_dump_dict() {
         // Empty dict
         let data = b"{0";
-        let object = Object::Dict(IndexMap::new().into());
+        let object = Object::Dict(IndexMap::new());
         let dumped = dump_bytes(object, None, (3, 10).into(), 4).unwrap();
         assert_eq!(data.to_vec(), dumped);
 
@@ -1055,12 +1047,12 @@ mod tests {
         let object = Object::Dict({
             let mut map = IndexMap::new();
             map.insert(
-                ObjectHashable::String(PyString::from("a".to_string()).into()).into(),
-                Object::String(PyString::from("b".to_string()).into()).into(),
+                ObjectHashable::String(PyString::from("a".to_string())),
+                Object::String(PyString::from("b".to_string())),
             );
             map.insert(
-                ObjectHashable::String(PyString::from("c".to_string()).into()).into(),
-                Object::String(PyString::from("d".to_string()).into()).into(),
+                ObjectHashable::String(PyString::from("c".to_string())),
+                Object::String(PyString::from("d".to_string())),
             );
             map
         });
@@ -1072,7 +1064,7 @@ mod tests {
     fn test_dump_set() {
         // Empty set
         let data = b"<\x00\x00\x00\x00";
-        let object = Object::Set(IndexSet::new().into());
+        let object = Object::Set(IndexSet::new());
         let dumped = dump_bytes(object, None, (3, 10).into(), 4).unwrap();
         assert_eq!(data.to_vec(), dumped);
 
@@ -1081,8 +1073,8 @@ mod tests {
         let data2 = b"<\x02\x00\x00\x00z\x01bz\x01a"; // Order is not guaranteed
         let object = Object::Set({
             let mut set = IndexSet::new();
-            set.insert(ObjectHashable::String(PyString::from("a".to_string()).into()).into());
-            set.insert(ObjectHashable::String(PyString::from("b".to_string()).into()).into());
+            set.insert(ObjectHashable::String(PyString::from("a".to_string())));
+            set.insert(ObjectHashable::String(PyString::from("b".to_string())));
             set
         });
         let dumped = dump_bytes(object, None, (3, 10).into(), 4).unwrap();
@@ -1093,7 +1085,7 @@ mod tests {
     fn test_dump_frozenset() {
         // Empty frozenset
         let data = b">\x00\x00\x00\x00";
-        let object = Object::FrozenSet(IndexSet::new().into());
+        let object = Object::FrozenSet(IndexSet::new());
         let dumped = dump_bytes(object, None, (3, 10).into(), 4).unwrap();
         assert_eq!(data.to_vec(), dumped);
 
@@ -1102,8 +1094,8 @@ mod tests {
         let data2 = b">\x02\x00\x00\x00z\x01bz\x01a";
         let object = Object::FrozenSet({
             let mut set = IndexSet::new();
-            set.insert(ObjectHashable::String(PyString::from("a".to_string()).into()).into());
-            set.insert(ObjectHashable::String(PyString::from("b".to_string()).into()).into());
+            set.insert(ObjectHashable::String(PyString::from("a".to_string())));
+            set.insert(ObjectHashable::String(PyString::from("b".to_string())));
             set
         });
         let dumped = dump_bytes(object, None, (3, 10).into(), 4).unwrap();
@@ -1123,34 +1115,32 @@ mod tests {
             nlocals: 2,
             stacksize: 3,
             flags: CodeFlags::from_bits_truncate(0x43),
-            code: Object::Bytes(vec![116, 0, 124, 0, 124, 1, 131, 2, 1, 0, 100, 0, 83, 0].into())
+            code: Object::Bytes(vec![116, 0, 124, 0, 124, 1, 131, 2, 1, 0, 100, 0, 83, 0])
                 .into(),
-            consts: Object::Tuple([Object::None.into()].to_vec().into()).into(),
+            consts: Object::Tuple([Object::None].to_vec()).into(),
             names: Object::Tuple(
-                [Object::String(PyString::from("print".to_string()).into()).into()]
-                    .to_vec()
-                    .into(),
+                [Object::String(PyString::from("print".to_string()))]
+                    .to_vec(),
             )
             .into(),
             varnames: Object::Tuple(
                 [
-                    Object::String(PyString::from("arg1".to_string()).into()).into(),
-                    Object::String(PyString::from("arg2".to_string()).into()).into(),
+                    Object::String(PyString::from("arg1".to_string())),
+                    Object::String(PyString::from("arg2".to_string())),
                 ]
-                .to_vec()
-                .into(),
+                .to_vec(),
             )
             .into(),
-            freevars: Object::Tuple([].to_vec().into()).into(),
-            cellvars: Object::Tuple([].to_vec().into()).into(),
-            filename: Object::String(PyString::from("<stdin>".to_string()).into()).into(),
-            name: Object::String(PyString::from("f".to_string()).into()).into(),
+            freevars: Object::Tuple([].to_vec()).into(),
+            cellvars: Object::Tuple([].to_vec()).into(),
+            filename: Object::String(PyString::from("<stdin>".to_string())).into(),
+            name: Object::String(PyString::from("f".to_string())).into(),
             firstlineno: 1,
-            linetable: Object::Bytes([14, 0].to_vec().into()).into(),
+            linetable: Object::Bytes([14, 0].to_vec()).into(),
         });
         dbg!(&object);
 
-        let dumped = dump_bytes(Object::Code(object.into()), None, (3, 10).into(), 4).unwrap();
+        let dumped = dump_bytes(Object::Code(object), None, (3, 10).into(), 4).unwrap();
 
         assert_eq!(data.to_vec(), dumped);
     }
@@ -1179,21 +1169,20 @@ mod tests {
             kind,
             Object::List(
                 vec![
-                    Object::StoreRef(0).into(),
-                    Object::LoadRef(0).into(),
-                    Object::LoadRef(0).into()
+                    Object::StoreRef(0),
+                    Object::LoadRef(0),
+                    Object::LoadRef(0)
                 ]
-                .into()
             )
         );
 
-        assert_eq!(*refs.get(0).unwrap(), Object::Long(BigInt::from(1)).into());
+        assert_eq!(*refs.first().unwrap(), Object::Long(BigInt::from(1)));
 
         let kind = Object::StoreRef(0);
         let refs = vec![
-            Object::List(vec![Object::StoreRef(1).into(), Object::LoadRef(1).into()]).into(),
+            Object::List(vec![Object::StoreRef(1), Object::LoadRef(1)]),
             Object::StoreRef(2),
-            Object::Long(BigInt::from(1)).into(),
+            Object::Long(BigInt::from(1)),
         ];
 
         let (kind, refs) = optimize_references(&kind, &refs);
@@ -1202,19 +1191,19 @@ mod tests {
 
         assert_eq!(
             kind,
-            Object::List(vec![Object::StoreRef(0).into(), Object::LoadRef(0).into()].into())
+            Object::List(vec![Object::StoreRef(0), Object::LoadRef(0)])
         );
 
-        assert_eq!(*refs.get(0).unwrap(), Object::Long(BigInt::from(1)).into());
+        assert_eq!(*refs.first().unwrap(), Object::Long(BigInt::from(1)));
     }
 
     #[test]
     fn test_reference_unite() {
         let kind = Object::StoreRef(0);
         let refs = vec![
-            Object::List(vec![Object::StoreRef(1).into(), Object::StoreRef(2).into()]).into(),
-            Object::Long(BigInt::from(1)).into(),
-            Object::Long(BigInt::from(1)).into(),
+            Object::List(vec![Object::StoreRef(1), Object::StoreRef(2)]),
+            Object::Long(BigInt::from(1)),
+            Object::Long(BigInt::from(1)),
         ];
 
         let (kind, refs) = unite_references(&kind, &refs);
@@ -1225,6 +1214,6 @@ mod tests {
             Object::List([Object::StoreRef(0), Object::LoadRef(0)].into())
         );
 
-        assert_eq!(*refs.get(0).unwrap(), Object::Long(BigInt::from(1)));
+        assert_eq!(*refs.first().unwrap(), Object::Long(BigInt::from(1)));
     }
 }
