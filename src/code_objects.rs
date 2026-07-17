@@ -1,4 +1,4 @@
-use crate::{extract_object, extract_strings_tuple, resolve_object_ref, CodeFlags, Error, Object};
+use crate::{CodeFlags, Error, Object, extract_object, extract_strings_tuple, resolve_object_ref};
 
 /// Represents a Python code object for Python 3.10.
 #[rustfmt::skip]

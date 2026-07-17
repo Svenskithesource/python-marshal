@@ -9,6 +9,7 @@ mod writer;
 
 use bitflags::bitflags;
 use bstr::BString;
+use core::time;
 use error::Error;
 use hashable::HashableHashSet;
 use indexmap::{IndexMap, IndexSet};
@@ -16,7 +17,7 @@ use magic::PyVersion;
 use num_bigint::BigInt;
 use num_complex::Complex;
 use num_derive::{FromPrimitive, ToPrimitive};
-use optimizer::{get_used_references, ReferenceOptimizer, Transformable};
+use optimizer::{ReferenceOptimizer, Transformable, get_used_references};
 use ordered_float::OrderedFloat;
 use reader::PyReader;
 use std::io::Read;
@@ -265,13 +266,32 @@ impl From<ObjectHashable> for Object {
     }
 }
 
+bitflags! {
+    /// Represents the flags that can be set in a .pyc file
+    /// See https://docs.python.org/3/library/py_compile.html#py_compile.PycInvalidationMode
+    #[derive(Clone, Debug, PartialEq)]
+    pub struct PycFlags: u32 {
+        const TIMESTAMP                   = 0x0; // 0b00
+        const UNCHECKED_HASH              = 0x2; // 0b10
+        const CHECKED_HASH                = 0x3; // 0b11
+    }
+}
+
+/// Stores information about either the timestamp or hash
+#[derive(Debug, Clone, PartialEq)]
+pub enum PycMetadata {
+    /// (mtime, source_size)
+    Timestamp(u32, u32),
+    CheckedHash(u64),
+    UncheckedHash(u64),
+}
+
 /// Represents a Python .pyc file, which contains a marshaled Python object along with metadata such as the Python version, timestamp, and hash.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PycFile {
     pub python_version: PyVersion,
     /// Only present in Python 3.7 and later
-    pub timestamp: Option<u32>,
-    pub hash: u64,
+    pub metadata: Option<PycMetadata>,
     pub object: Object,
     pub references: Vec<Object>,
 }
@@ -321,28 +341,49 @@ pub fn load_pyc(data: impl Read) -> Result<PycFile, Error> {
     let magic_number = u32::from_le_bytes(data[0..4].try_into().map_err(|_| Error::NoMagicNumber)?);
     let python_version = PyVersion::try_from(magic_number)?;
 
-    let timestamp = if python_version >= (3, 7) {
-        Some(u32::from_le_bytes(
-            data[4..8].try_into().map_err(|_| Error::NoTimeStamp)?,
-        ))
+    let flags = PycFlags::from_bits(u32::from_le_bytes(
+        data[4..8].try_into().map_err(|_| Error::NoPycFlags)?,
+    ));
+
+    let metadata = if python_version >= (3, 7)
+        && let Some(flags) = flags
+    {
+        match flags {
+            PycFlags::TIMESTAMP => PycMetadata::Timestamp(
+                u32::from_le_bytes(data[8..12].try_into().map_err(|_| Error::NoTimeStamp)?),
+                u32::from_le_bytes(data[12..16].try_into().map_err(|_| Error::NoTimeStamp)?),
+            )
+            .into(),
+            PycFlags::CHECKED_HASH => PycMetadata::CheckedHash(u64::from_le_bytes(
+                data[8..16].try_into().map_err(|_| Error::NoHash)?,
+            ))
+            .into(),
+            PycFlags::UNCHECKED_HASH => PycMetadata::UncheckedHash(u64::from_le_bytes(
+                data[8..16].try_into().map_err(|_| Error::NoHash)?,
+            ))
+            .into(),
+            _ => None,
+        }
+    } else if let Some(flags) = flags {
+        let timestamp = PycMetadata::Timestamp(
+            u32::from_le_bytes(data[4..8].try_into().map_err(|_| Error::NoTimeStamp)?),
+            u32::from_le_bytes(data[8..12].try_into().map_err(|_| Error::NoTimeStamp)?),
+        );
+        match flags {
+            PycFlags::TIMESTAMP => timestamp.into(),
+            _ => None,
+        }
     } else {
         None
     };
 
-    let hash = if python_version >= (3, 7) {
-        u64::from_le_bytes(data[8..16].try_into().map_err(|_| Error::NoHash)?)
-    } else {
-        u64::from_le_bytes(data[4..12].try_into().map_err(|_| Error::NoHash)?)
-    };
-
-    let data = &data[16..];
+    let data = &data[(if python_version >= (3, 7) { 16 } else { 12 })..];
 
     let (object, references) = load_bytes(data, python_version)?;
 
     Ok(PycFile {
         python_version,
-        timestamp,
-        hash,
+        metadata,
         object,
         references,
     })
@@ -354,10 +395,49 @@ pub fn dump_pyc(pyc_file: PycFile) -> Result<Vec<u8>, Error> {
     let mut py_writer = PyWriter::new(pyc_file.references, 4);
 
     buf.extend_from_slice(&u32::to_le_bytes(pyc_file.python_version.to_magic()?));
-    if let Some(timestamp) = pyc_file.timestamp {
-        buf.extend_from_slice(&u32::to_le_bytes(timestamp));
+
+    match (pyc_file.metadata, pyc_file.python_version) {
+        (None, value) if value >= PyVersion::new(3, 7) => {
+            // Empty flags
+            buf.extend_from_slice(&u32::to_le_bytes(0));
+
+            // Empty timestamp
+            buf.extend_from_slice(&u32::to_le_bytes(0));
+            buf.extend_from_slice(&u32::to_le_bytes(0));
+        }
+        (None, _) => {
+            // No flags for below 3.7
+
+            buf.extend_from_slice(&u32::to_le_bytes(0));
+            buf.extend_from_slice(&u32::to_le_bytes(0));
+        }
+        (Some(metadata), version) => match metadata {
+            PycMetadata::Timestamp(time, source_size) => {
+                if version >= PyVersion::new(3, 7) {
+                    buf.extend_from_slice(&PycFlags::TIMESTAMP.bits().to_le_bytes());
+                }
+
+                buf.extend_from_slice(&u32::to_le_bytes(time));
+                buf.extend_from_slice(&u32::to_le_bytes(source_size));
+            }
+            PycMetadata::UncheckedHash(hash) => {
+                if version >= PyVersion::new(3, 7) {
+                    buf.extend_from_slice(&PycFlags::UNCHECKED_HASH.bits().to_le_bytes());
+                }
+
+                buf.extend_from_slice(&u64::to_le_bytes(hash));
+            }
+
+            PycMetadata::CheckedHash(hash) => {
+                if version >= PyVersion::new(3, 7) {
+                    buf.extend_from_slice(&PycFlags::CHECKED_HASH.bits().to_le_bytes());
+                }
+
+                buf.extend_from_slice(&u64::to_le_bytes(hash));
+            }
+        },
     }
-    buf.extend_from_slice(&u64::to_le_bytes(pyc_file.hash));
+
     buf.extend_from_slice(&py_writer.write_object(Some(pyc_file.object))?);
 
     Ok(buf)
@@ -540,8 +620,7 @@ mod tests {
         let (kind, refs) = load_bytes(data, (3, 10).into()).unwrap();
 
         assert_eq!(
-            extract_object!(Some(kind.clone()), Object::StoreRef(index) => index, Error::UnexpectedObject)
-                .unwrap(),
+            extract_object!(Some(kind.clone()), Object::StoreRef(index) => index, Error::UnexpectedObject).unwrap(),
             0
         );
 
@@ -719,23 +798,43 @@ mod tests {
     #[test]
     fn test_load_code310() {
         // def f(arg1, arg2=None): print(arg1, arg2)
-        let data = b"\xe3\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x03\x00\x00\x00C\x00\x00\x00s\x0e\x00\x00\x00t\x00|\x00|\x01\x83\x02\x01\x00d\x00S\x00\xa9\x01N)\x01\xda\x05print)\x02Z\x04arg1Z\x04arg2\xa9\x00r\x03\x00\x00\x00\xfa\x07<stdin>\xda\x01f\x01\x00\x00\x00s\x02\x00\x00\x00\x0e\x00";
+        let data =
+            b"\xe3\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x03\x00\x00\x00C\x00\x00\x00s\x0e\x00\x00\x00t\x00|\x00|\x01\x83\x02\x01\x00d\x00S\x00\xa9\x01N)\x01\xda\x05print)\x02Z\x04arg1Z\x04arg2\xa9\x00r\x03\x00\x00\x00\xfa\x07<stdin>\xda\x01f\x01\x00\x00\x00s\x02\x00\x00\x00\x0e\x00";
         let (kind, refs) = load_bytes(data, (3, 10).into()).unwrap();
 
-        let code = extract_object!(Some(resolve_object_ref!(Some(kind), refs).unwrap()), Object::Code(code) => code, Error::UnexpectedObject)
-                .unwrap().clone();
+        let code =
+            extract_object!(Some(resolve_object_ref!(Some(kind), refs).unwrap()), Object::Code(code) => code, Error::UnexpectedObject)
+                .unwrap()
+                .clone();
 
         match code {
             Code::V310(code) => {
-                let inner_code = extract_object!(Some(resolve_object_ref!(Some((*code.code).clone()), &refs).unwrap()), Object::Bytes(bytes) => bytes, Error::NullInTuple).unwrap();
-                let inner_consts = extract_object!(Some(resolve_object_ref!(Some((*code.consts).clone()), &refs).unwrap()), Object::Tuple(objs) => objs, Error::NullInTuple).unwrap();
-                let inner_names = extract_strings_tuple!(extract_object!(Some(resolve_object_ref!(Some((*code.names).clone()), &refs).unwrap()), Object::Tuple(objs) => objs, Error::NullInTuple).unwrap(), &refs).unwrap();
-                let inner_varnames = extract_strings_tuple!(extract_object!(Some(resolve_object_ref!(Some((*code.varnames).clone()), &refs).unwrap()), Object::Tuple(objs) => objs, Error::NullInTuple).unwrap(), &refs).unwrap();
-                let inner_freevars = extract_strings_tuple!(extract_object!(Some(resolve_object_ref!(Some((*code.freevars).clone()), &refs).unwrap()), Object::Tuple(objs) => objs, Error::NullInTuple).unwrap(), &refs).unwrap();
-                let inner_cellvars = extract_strings_tuple!(extract_object!(Some(resolve_object_ref!(Some((*code.cellvars).clone()), &refs).unwrap()), Object::Tuple(objs) => objs, Error::NullInTuple).unwrap(), &refs).unwrap();
-                let inner_filename = extract_object!(Some(resolve_object_ref!(Some((*code.filename).clone()), &refs).unwrap()), Object::String(string) => string, Error::UnexpectedObject).unwrap();
-                let inner_name = extract_object!(Some(resolve_object_ref!(Some((*code.name).clone()), &refs).unwrap()), Object::String(string) => string, Error::UnexpectedObject).unwrap();
-                let inner_linetable = extract_object!(Some(resolve_object_ref!(Some((*code.linetable).clone()), &refs).unwrap()), Object::Bytes(bytes) => bytes, Error::NullInTuple).unwrap();
+                let inner_code =
+                    extract_object!(Some(resolve_object_ref!(Some((*code.code).clone()), &refs).unwrap()), Object::Bytes(bytes) => bytes, Error::NullInTuple).unwrap();
+                let inner_consts =
+                    extract_object!(Some(resolve_object_ref!(Some((*code.consts).clone()), &refs).unwrap()), Object::Tuple(objs) => objs, Error::NullInTuple).unwrap();
+                let inner_names = extract_strings_tuple!(
+                    extract_object!(Some(resolve_object_ref!(Some((*code.names).clone()), &refs).unwrap()), Object::Tuple(objs) => objs, Error::NullInTuple).unwrap(),
+                    &refs
+                ).unwrap();
+                let inner_varnames = extract_strings_tuple!(
+                    extract_object!(Some(resolve_object_ref!(Some((*code.varnames).clone()), &refs).unwrap()), Object::Tuple(objs) => objs, Error::NullInTuple).unwrap(),
+                    &refs
+                ).unwrap();
+                let inner_freevars = extract_strings_tuple!(
+                    extract_object!(Some(resolve_object_ref!(Some((*code.freevars).clone()), &refs).unwrap()), Object::Tuple(objs) => objs, Error::NullInTuple).unwrap(),
+                    &refs
+                ).unwrap();
+                let inner_cellvars = extract_strings_tuple!(
+                    extract_object!(Some(resolve_object_ref!(Some((*code.cellvars).clone()), &refs).unwrap()), Object::Tuple(objs) => objs, Error::NullInTuple).unwrap(),
+                    &refs
+                ).unwrap();
+                let inner_filename =
+                    extract_object!(Some(resolve_object_ref!(Some((*code.filename).clone()), &refs).unwrap()), Object::String(string) => string, Error::UnexpectedObject).unwrap();
+                let inner_name =
+                    extract_object!(Some(resolve_object_ref!(Some((*code.name).clone()), &refs).unwrap()), Object::String(string) => string, Error::UnexpectedObject).unwrap();
+                let inner_linetable =
+                    extract_object!(Some(resolve_object_ref!(Some((*code.linetable).clone()), &refs).unwrap()), Object::Bytes(bytes) => bytes, Error::NullInTuple).unwrap();
 
                 assert_eq!(code.argcount, 2);
                 assert_eq!(code.posonlyargcount, 0);
@@ -767,23 +866,39 @@ mod tests {
     #[test]
     fn test_load_code311() {
         // def f(arg1, arg2=None): print(arg1, arg2)
-        let data = b"\xe3\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x04\x00\x00\x00\x03\x00\x00\x00\xf3&\x00\x00\x00\x97\x00t\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00|\x00|\x01\xa6\x02\x00\x00\xab\x02\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00d\x00S\x00\xa9\x01N)\x01\xda\x05print)\x02\xda\x04arg1\xda\x04arg2s\x02\x00\x00\x00  \xfa\x07<stdin>\xda\x01fr\x07\x00\x00\x00\x01\x00\x00\x00s\x17\x00\x00\x00\x80\x00\x9d\x05\x98d\xa0D\xd1\x18)\xd4\x18)\xd0\x18)\xd0\x18)\xd0\x18)\xf3\x00\x00\x00\x00";
+        let data =
+            b"\xe3\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x04\x00\x00\x00\x03\x00\x00\x00\xf3&\x00\x00\x00\x97\x00t\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00|\x00|\x01\xa6\x02\x00\x00\xab\x02\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00d\x00S\x00\xa9\x01N)\x01\xda\x05print)\x02\xda\x04arg1\xda\x04arg2s\x02\x00\x00\x00  \xfa\x07<stdin>\xda\x01fr\x07\x00\x00\x00\x01\x00\x00\x00s\x17\x00\x00\x00\x80\x00\x9d\x05\x98d\xa0D\xd1\x18)\xd4\x18)\xd0\x18)\xd0\x18)\xd0\x18)\xf3\x00\x00\x00\x00";
         let (kind, refs) = load_bytes(data, (3, 11).into()).unwrap();
 
-        let code = extract_object!(Some(resolve_object_ref!(Some(kind), refs).unwrap()), Object::Code(code) => code, Error::UnexpectedObject)
-                .unwrap().clone();
+        let code =
+            extract_object!(Some(resolve_object_ref!(Some(kind), refs).unwrap()), Object::Code(code) => code, Error::UnexpectedObject)
+                .unwrap()
+                .clone();
 
         match code {
             Code::V311(code) => {
-                let inner_code = extract_object!(Some(resolve_object_ref!(Some((*code.code).clone()), &refs).unwrap()), Object::Bytes(bytes) => bytes, Error::NullInTuple).unwrap();
-                let inner_consts = extract_object!(Some(resolve_object_ref!(Some((*code.consts).clone()), &refs).unwrap()), Object::Tuple(objs) => objs, Error::NullInTuple).unwrap();
-                let inner_names = extract_strings_tuple!(extract_object!(Some(resolve_object_ref!(Some((*code.names).clone()), &refs).unwrap()), Object::Tuple(objs) => objs, Error::NullInTuple).unwrap(), &refs).unwrap();
-                let inner_localsplusnames = extract_strings_tuple!(extract_object!(Some(resolve_object_ref!(Some((*code.localsplusnames).clone()), &refs).unwrap()), Object::Tuple(objs) => objs, Error::NullInTuple).unwrap(), &refs).unwrap();
-                let inner_localspluskinds = extract_object!(Some(resolve_object_ref!(Some((*code.localspluskinds).clone()), &refs).unwrap()), Object::Bytes(bytes) => bytes, Error::NullInTuple).unwrap();
-                let inner_filename = extract_object!(Some(resolve_object_ref!(Some((*code.filename).clone()), &refs).unwrap()), Object::String(string) => string, Error::UnexpectedObject).unwrap();
-                let inner_name = extract_object!(Some(resolve_object_ref!(Some((*code.name).clone()), &refs).unwrap()), Object::String(string) => string, Error::UnexpectedObject).unwrap();
-                let inner_linetable = extract_object!(Some(resolve_object_ref!(Some((*code.linetable).clone()), &refs).unwrap()), Object::Bytes(bytes) => bytes, Error::NullInTuple).unwrap();
-                let inner_exceptiontable = extract_object!(Some(resolve_object_ref!(Some((*code.exceptiontable).clone()), &refs).unwrap()), Object::Bytes(bytes) => bytes, Error::NullInTuple).unwrap();
+                let inner_code =
+                    extract_object!(Some(resolve_object_ref!(Some((*code.code).clone()), &refs).unwrap()), Object::Bytes(bytes) => bytes, Error::NullInTuple).unwrap();
+                let inner_consts =
+                    extract_object!(Some(resolve_object_ref!(Some((*code.consts).clone()), &refs).unwrap()), Object::Tuple(objs) => objs, Error::NullInTuple).unwrap();
+                let inner_names = extract_strings_tuple!(
+                    extract_object!(Some(resolve_object_ref!(Some((*code.names).clone()), &refs).unwrap()), Object::Tuple(objs) => objs, Error::NullInTuple).unwrap(),
+                    &refs
+                ).unwrap();
+                let inner_localsplusnames = extract_strings_tuple!(
+                    extract_object!(Some(resolve_object_ref!(Some((*code.localsplusnames).clone()), &refs).unwrap()), Object::Tuple(objs) => objs, Error::NullInTuple).unwrap(),
+                    &refs
+                ).unwrap();
+                let inner_localspluskinds =
+                    extract_object!(Some(resolve_object_ref!(Some((*code.localspluskinds).clone()), &refs).unwrap()), Object::Bytes(bytes) => bytes, Error::NullInTuple).unwrap();
+                let inner_filename =
+                    extract_object!(Some(resolve_object_ref!(Some((*code.filename).clone()), &refs).unwrap()), Object::String(string) => string, Error::UnexpectedObject).unwrap();
+                let inner_name =
+                    extract_object!(Some(resolve_object_ref!(Some((*code.name).clone()), &refs).unwrap()), Object::String(string) => string, Error::UnexpectedObject).unwrap();
+                let inner_linetable =
+                    extract_object!(Some(resolve_object_ref!(Some((*code.linetable).clone()), &refs).unwrap()), Object::Bytes(bytes) => bytes, Error::NullInTuple).unwrap();
+                let inner_exceptiontable =
+                    extract_object!(Some(resolve_object_ref!(Some((*code.exceptiontable).clone()), &refs).unwrap()), Object::Bytes(bytes) => bytes, Error::NullInTuple).unwrap();
 
                 assert_eq!(code.argcount, 2);
                 assert_eq!(code.posonlyargcount, 0);
@@ -813,7 +928,8 @@ mod tests {
 
     #[test]
     fn test_load_pyc() {
-        let data = b"o\r\r\n\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xe3\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00@\x00\x00\x00s\x0c\x00\x00\x00e\x00d\x00\x83\x01\x01\x00d\x01S\x00)\x02z\x0ehi from PythonN)\x01\xda\x05print\xa9\x00r\x02\x00\x00\x00r\x02\x00\x00\x00z\x08<string>\xda\x08<module>\x01\x00\x00\x00s\x02\x00\x00\x00\x0c\x00";
+        let data =
+            b"o\r\r\n\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xe3\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00@\x00\x00\x00s\x0c\x00\x00\x00e\x00d\x00\x83\x01\x01\x00d\x01S\x00)\x02z\x0ehi from PythonN)\x01\xda\x05print\xa9\x00r\x02\x00\x00\x00r\x02\x00\x00\x00z\x08<string>\xda\x08<module>\x01\x00\x00\x00s\x02\x00\x00\x00\x0c\x00";
 
         let mut temp_file = NamedTempFile::new().unwrap();
         temp_file.write_all(data).unwrap();
@@ -997,7 +1113,8 @@ mod tests {
     #[test]
     fn test_dump_code() {
         // def f(arg1, arg2=None): print(arg1, arg2)
-        let data = b"c\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x03\x00\x00\x00C\x00\x00\x00s\x0e\x00\x00\x00t\x00|\x00|\x01\x83\x02\x01\x00d\x00S\x00)\x01N)\x01z\x05print)\x02z\x04arg1z\x04arg2)\x00)\x00z\x07<stdin>z\x01f\x01\x00\x00\x00s\x02\x00\x00\x00\x0e\x00";
+        let data =
+            b"c\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x03\x00\x00\x00C\x00\x00\x00s\x0e\x00\x00\x00t\x00|\x00|\x01\x83\x02\x01\x00d\x00S\x00)\x01N)\x01z\x05print)\x02z\x04arg1z\x04arg2)\x00)\x00z\x07<stdin>z\x01f\x01\x00\x00\x00s\x02\x00\x00\x00\x0e\x00";
 
         let object = Code::V310(code_objects::Code310 {
             argcount: 2,
@@ -1031,6 +1148,8 @@ mod tests {
             firstlineno: 1,
             linetable: Object::Bytes([14, 0].to_vec().into()).into(),
         });
+        dbg!(&object);
+
         let dumped = dump_bytes(Object::Code(object.into()), None, (3, 10).into(), 4).unwrap();
 
         assert_eq!(data.to_vec(), dumped);
@@ -1038,7 +1157,8 @@ mod tests {
 
     #[test]
     fn test_recompile() {
-        let data = b"c\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x03\x00\x00\x00C\x00\x00\x00s\x0e\x00\x00\x00t\x00|\x00|\x01\x83\x02\x01\x00d\x00S\x00)\x01N)\x01z\x05print)\x02z\x04arg1z\x04arg2)\x00)\x00z\x07<stdin>z\x01f\x01\x00\x00\x00s\x02\x00\x00\x00\x0e\x00";
+        let data =
+            b"c\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x03\x00\x00\x00C\x00\x00\x00s\x0e\x00\x00\x00t\x00|\x00|\x01\x83\x02\x01\x00d\x00S\x00)\x01N)\x01z\x05print)\x02z\x04arg1z\x04arg2)\x00)\x00z\x07<stdin>z\x01f\x01\x00\x00\x00s\x02\x00\x00\x00\x0e\x00";
 
         let (kind, refs) = load_bytes(data, (3, 10).into()).unwrap();
         let dumped = dump_bytes(kind, Some(refs), (3, 10).into(), 4).unwrap();
@@ -1082,7 +1202,7 @@ mod tests {
 
         assert_eq!(
             kind,
-            Object::List(vec![Object::StoreRef(0).into(), Object::LoadRef(0).into(),].into())
+            Object::List(vec![Object::StoreRef(0).into(), Object::LoadRef(0).into()].into())
         );
 
         assert_eq!(*refs.get(0).unwrap(), Object::Long(BigInt::from(1)).into());

@@ -3,7 +3,7 @@ use std::{
     string::FromUtf16Error,
 };
 
-use crate::{magic::PyVersion, Kind, Object};
+use crate::{Kind, Object, magic::PyVersion};
 
 /// Represents errors that can occur while reading or writing Python marshal data.
 #[derive(Debug)]
@@ -13,6 +13,7 @@ pub enum Error {
     NoMagicNumber,
     NoTimeStamp,
     NoHash,
+    NoPycFlags,
     UnsupportedMagicNumber(u32),
     DigitOutOfRange(u16),
     UnnormalizedLong,
@@ -45,6 +46,7 @@ impl Display for Error {
             Error::NoMagicNumber => write!(f, "no magic number found"),
             Error::NoTimeStamp => write!(f, "no timestamp found"),
             Error::NoHash => write!(f, "no hash found"),
+            Error::NoPycFlags => write!(f, "no flags found in pyc file"),
             Error::UnsupportedMagicNumber(magic) => {
                 write!(f, "unsupported magic number: 0x{:08X}", magic)
             }

@@ -3,7 +3,7 @@ use num_bigint::BigInt;
 use num_complex::Complex;
 use num_traits::{Signed, ToPrimitive};
 
-use crate::{error::Error, Code, Kind, Object};
+use crate::{Code, Kind, Object, error::Error};
 
 /// Macro to write Code31x objects (Python 3.11, 3.12, 3.13) which share the same structure
 macro_rules! w_code311 {
@@ -167,16 +167,7 @@ impl PyWriter {
             Some(Object::StopIteration) => self.w_kind(Kind::StopIteration, is_ref),
             Some(Object::Ellipsis) => self.w_kind(Kind::Ellipsis, is_ref),
             Some(Object::Bool(value)) => {
-                self.w_kind(
-                    {
-                        if value {
-                            Kind::True
-                        } else {
-                            Kind::False
-                        }
-                    },
-                    is_ref,
-                );
+                self.w_kind({ if value { Kind::True } else { Kind::False } }, is_ref);
             }
             Some(Object::Long(num)) => {
                 let num = num.clone();

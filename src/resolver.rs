@@ -1,7 +1,6 @@
 use crate::{
-    optimize_references,
+    Object, ObjectHashable, optimize_references,
     optimizer::{Transformable, Transformer},
-    Object, ObjectHashable,
 };
 
 /// Checks if there are any recursive references in the given object or the ones it references.
@@ -165,9 +164,8 @@ pub fn get_recursive_refs(obj: &Object, references: &[Object]) -> Vec<usize> {
 /// Attempts to resolve all references in the given object and its references. This will remove all unused references and resolve all non-recursively stored references.
 /// If there are any recursive references, they will be left as LoadRef or StoreRef objects and included in the returned references.
 pub fn resolve_all_refs(obj: &Object, references: &[Object]) -> (Object, Vec<Object>) {
-    
     let (optimized_obj, optimized_refs) = optimize_references(obj, references); // Remove all unused references
-    
+
     // Resolve all non-recursively stored references
     let recursive_refs = get_recursive_refs(&optimized_obj, &optimized_refs);
 

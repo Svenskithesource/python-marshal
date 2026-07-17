@@ -7,8 +7,8 @@ use std::{
 
 use num_traits::FromPrimitive;
 use python_marshal::{
-    dump_bytes, magic::PyVersion, minimize_references, optimize_references,
-    resolver::resolve_all_refs, Kind, PycFile,
+    Kind, PycFile, dump_bytes, magic::PyVersion, minimize_references, optimize_references,
+    resolver::resolve_all_refs,
 };
 
 mod common;
@@ -149,8 +149,7 @@ fn test_write_resolved_standard_lib() {
 
             let dumped_pyc = PycFile {
                 python_version: code.python_version,
-                hash: code.hash,
-                timestamp: code.timestamp,
+                metadata: code.metadata,
                 object: temp_obj,
                 references: temp_refs,
             };
@@ -203,8 +202,7 @@ fn test_write_optimized_standard_lib() {
 
             let dumped_pyc = PycFile {
                 python_version: code.python_version,
-                hash: code.hash,
-                timestamp: code.timestamp,
+                metadata: code.metadata,
                 object: temp_obj,
                 references: temp_refs,
             };

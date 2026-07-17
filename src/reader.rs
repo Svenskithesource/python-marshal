@@ -8,7 +8,7 @@ use num_complex::Complex;
 use num_traits::FromPrimitive;
 
 use crate::{
-    code_objects, error::Error, Code, CodeFlags, Kind, Object, ObjectHashable, PyString, PyVersion,
+    Code, CodeFlags, Kind, Object, ObjectHashable, PyString, PyVersion, code_objects, error::Error,
 };
 
 /// On windows this is 1000.

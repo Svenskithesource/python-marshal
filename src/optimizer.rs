@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use hashable::HashableHashSet;
 use indexmap::set::MutableValues;
 
-use crate::{optimize_references, unite_references, Code, Object, ObjectHashable};
+use crate::{Code, Object, ObjectHashable, optimize_references, unite_references};
 
 /// Trait for transforming Python objects.
 // TODO: Don't use Sized to fix the error
