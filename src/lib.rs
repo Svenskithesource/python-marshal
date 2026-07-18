@@ -140,6 +140,12 @@ impl PyString {
     }
 }
 
+impl std::fmt::Display for PyString {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.value)
+    }
+}
+
 /// Represents a Python object. A marshal file exists of a single object, which can contain other objects.
 #[rustfmt::skip]
 #[derive(Clone, Debug, PartialEq)]
@@ -261,6 +267,160 @@ impl From<ObjectHashable> for Object {
             }
             ObjectHashable::LoadRef(index) => Object::LoadRef(index),
             ObjectHashable::StoreRef(index) => Object::StoreRef(index),
+        }
+    }
+}
+
+// Tries to look like what Python would output
+impl std::fmt::Display for Object {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Object::None => write!(f, "None"),
+            Object::StopIteration => write!(f, "StopIteration"),
+            Object::Ellipsis => write!(f, "Ellipsis"),
+            Object::Bool(b) => write!(f, "{}", if *b { "True" } else { "False" }),
+            Object::Long(n) => write!(f, "{}", n),
+            Object::Float(n) => write!(f, "{}", n),
+            Object::Complex(c) => write!(f, "({} + {}j)", c.re, c.im),
+            Object::Bytes(b) => {
+                write!(f, "b'")?;
+                for &byte in b {
+                    for ascii in std::ascii::escape_default(byte) {
+                        write!(f, "{}", ascii as char)?;
+                    }
+                }
+                write!(f, "'")
+            }
+            Object::String(s) => write!(f, "\"{}\"", s),
+            Object::Tuple(elems) => {
+                write!(f, "(")?;
+                for (i, elem) in elems.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", elem)?;
+                }
+                // trailing comma for single-element tuples
+                // e.g. (1,)
+                if elems.len() == 1 {
+                    write!(f, ",")?;
+                }
+                write!(f, ")")
+            }
+            Object::List(elems) => {
+                write!(f, "[")?;
+                for (i, elem) in elems.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", elem)?;
+                }
+                write!(f, "]")
+            }
+            Object::Dict(map) => {
+                write!(f, "{{")?;
+                for (i, (k, v)) in map.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}: {}", k, v)?;
+                }
+                write!(f, "}}")
+            }
+            Object::Set(elems) => {
+                if elems.is_empty() {
+                    write!(f, "set()")
+                } else {
+                    write!(f, "{{")?;
+                    for (i, elem) in elems.iter().enumerate() {
+                        if i > 0 {
+                            write!(f, ", ")?;
+                        }
+                        write!(f, "{}", elem)?;
+                    }
+                    write!(f, "}}")
+                }
+            }
+            Object::FrozenSet(elems) => {
+                write!(f, "frozenset(")?;
+                if !elems.is_empty() {
+                    write!(f, "{{")?;
+                }
+
+                for (i, elem) in elems.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", elem)?;
+                }
+
+                if !elems.is_empty() {
+                    write!(f, "}}")?;
+                }
+
+                write!(f, ")")
+            }
+            Object::Code(c) => write!(f, "{}", c),
+            Object::LoadRef(id) => write!(f, "<LoadRef {}>", id),
+            Object::StoreRef(id) => write!(f, "<StoreRef {}>", id),
+        }
+    }
+}
+
+impl std::fmt::Display for ObjectHashable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ObjectHashable::None => write!(f, "None"),
+            ObjectHashable::StopIteration => write!(f, "StopIteration"),
+            ObjectHashable::Ellipsis => write!(f, "Ellipsis"),
+            ObjectHashable::Bool(b) => write!(f, "{}", if *b { "True" } else { "False" }),
+            ObjectHashable::Long(n) => write!(f, "{}", n),
+            ObjectHashable::Float(n) => write!(f, "{}", n),
+            ObjectHashable::Complex(c) => write!(f, "({} + {}j)", c.re, c.im),
+            ObjectHashable::Bytes(b) => {
+                write!(f, "b'")?;
+                for &byte in b {
+                    for ascii in std::ascii::escape_default(byte) {
+                        write!(f, "{}", ascii as char)?;
+                    }
+                }
+                write!(f, "'")
+            }
+            ObjectHashable::String(s) => write!(f, "\"{}\"", s),
+            ObjectHashable::Tuple(elems) => {
+                write!(f, "(")?;
+                for (i, elem) in elems.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", elem)?;
+                }
+                if elems.len() == 1 {
+                    write!(f, ",")?;
+                }
+                write!(f, ")")
+            }
+            ObjectHashable::FrozenSet(elems) => {
+                write!(f, "frozenset(")?;
+                if !elems.is_empty() {
+                    write!(f, "{{")?;
+                }
+
+                for (i, elem) in elems.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", elem)?;
+                }
+
+                if !elems.is_empty() {
+                    write!(f, "}}")?;
+                }
+
+                write!(f, ")")
+            }
+            ObjectHashable::LoadRef(id) => write!(f, "<LoadRef {}>", id),
+            ObjectHashable::StoreRef(id) => write!(f, "<StoreRef {}>", id),
         }
     }
 }
@@ -625,13 +785,11 @@ mod tests {
 
         assert_eq!(
             resolve_object_ref!(Some(kind.clone()), refs).unwrap(),
-            Object::List(
-                vec![
-                    Object::StoreRef(1),
-                    Object::LoadRef(1),
-                    Object::LoadRef(1)
-                ]
-            )
+            Object::List(vec![
+                Object::StoreRef(1),
+                Object::LoadRef(1),
+                Object::LoadRef(1)
+            ])
         );
 
         assert_eq!(*refs.get(1).unwrap(), Object::Long(BigInt::from(1)));
@@ -655,7 +813,8 @@ mod tests {
 
         assert_eq!(
             extract_object!(Some(obj), Object::List(list) => list, Error::UnexpectedObject)
-                .unwrap().to_vec(),
+                .unwrap()
+                .to_vec(),
             vec![
                 Object::Long(BigInt::from(1)),
                 Object::Long(BigInt::from(1)),
@@ -676,12 +835,10 @@ mod tests {
 
         assert_eq!(
             kind,
-            Object::List(
-                vec![
-                    Object::Long(BigInt::from(1)),
-                    Object::Long(BigInt::from(1))
-                ]
-            )
+            Object::List(vec![
+                Object::Long(BigInt::from(1)),
+                Object::Long(BigInt::from(1))
+            ])
         );
 
         assert_eq!(refs.len(), 0);
@@ -985,9 +1142,10 @@ mod tests {
 
         // "\xe9"
         let data = b"u\x03\x00\x00\x00\xed\xb2\x80";
-        let object = Object::String(
-            PyString::new(BString::new([237, 178, 128].to_vec()), Kind::Unicode),
-        );
+        let object = Object::String(PyString::new(
+            BString::new([237, 178, 128].to_vec()),
+            Kind::Unicode,
+        ));
         let dumped = dump_bytes(object, None, (3, 10).into(), 4).unwrap();
         assert_eq!(data.to_vec(), dumped);
     }
@@ -1002,12 +1160,10 @@ mod tests {
 
         // Tuple with two elements ("a", "b")
         let data = b")\x02z\x01az\x01b";
-        let object = Object::Tuple(
-            vec![
-                Object::String(PyString::from("a".to_string())),
-                Object::String(PyString::from("b".to_string())),
-            ],
-        );
+        let object = Object::Tuple(vec![
+            Object::String(PyString::from("a".to_string())),
+            Object::String(PyString::from("b".to_string())),
+        ]);
         let dumped = dump_bytes(object, None, (3, 10).into(), 4).unwrap();
         assert_eq!(data.to_vec(), dumped);
     }
@@ -1022,12 +1178,10 @@ mod tests {
 
         // List with two elements ("a", "b")
         let data = b"[\x02\x00\x00\x00z\x01az\x01b";
-        let object = Object::List(
-            vec![
-                Object::String(PyString::from("a".to_string())),
-                Object::String(PyString::from("b".to_string())),
-            ],
-        );
+        let object = Object::List(vec![
+            Object::String(PyString::from("a".to_string())),
+            Object::String(PyString::from("b".to_string())),
+        ]);
         dbg!(&object);
         let dumped = dump_bytes(object, None, (3, 10).into(), 4).unwrap();
         assert_eq!(data.to_vec(), dumped);
@@ -1115,14 +1269,10 @@ mod tests {
             nlocals: 2,
             stacksize: 3,
             flags: CodeFlags::from_bits_truncate(0x43),
-            code: Object::Bytes(vec![116, 0, 124, 0, 124, 1, 131, 2, 1, 0, 100, 0, 83, 0])
-                .into(),
+            code: Object::Bytes(vec![116, 0, 124, 0, 124, 1, 131, 2, 1, 0, 100, 0, 83, 0]).into(),
             consts: Object::Tuple([Object::None].to_vec()).into(),
-            names: Object::Tuple(
-                [Object::String(PyString::from("print".to_string()))]
-                    .to_vec(),
-            )
-            .into(),
+            names: Object::Tuple([Object::String(PyString::from("print".to_string()))].to_vec())
+                .into(),
             varnames: Object::Tuple(
                 [
                     Object::String(PyString::from("arg1".to_string())),
@@ -1167,13 +1317,11 @@ mod tests {
 
         assert_eq!(
             kind,
-            Object::List(
-                vec![
-                    Object::StoreRef(0),
-                    Object::LoadRef(0),
-                    Object::LoadRef(0)
-                ]
-            )
+            Object::List(vec![
+                Object::StoreRef(0),
+                Object::LoadRef(0),
+                Object::LoadRef(0)
+            ])
         );
 
         assert_eq!(*refs.first().unwrap(), Object::Long(BigInt::from(1)));

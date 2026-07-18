@@ -1,4 +1,6 @@
-use crate::{CodeFlags, Error, Object, extract_object, extract_strings_tuple, resolve_object_ref};
+use crate::{
+    Code, CodeFlags, Error, Object, extract_object, extract_strings_tuple, resolve_object_ref,
+};
 
 /// Represents a Python code object for Python 3.10.
 #[rustfmt::skip]
@@ -87,6 +89,16 @@ impl Code310 {
     }
 }
 
+impl std::fmt::Display for Code310 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "<code object {}, file \"{}\", line {}>",
+            self.name, self.filename, self.firstlineno
+        )
+    }
+}
+
 // Macro to generate Code31x structs for Python 3.11, 3.12, 3.13 (they share the same structure)
 macro_rules! define_code31x {
     ($($ver:ident),+) => {
@@ -170,8 +182,29 @@ macro_rules! define_code31x {
                     })
                 }
             }
+
+            impl std::fmt::Display for $ver {
+                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    write!(
+                        f,
+                        "<code object {}, file \"{}\", line {}>",
+                        self.name, self.filename, self.firstlineno
+                    )
+                }
+            }
         )+
     };
 }
 
 define_code31x!(Code311, Code312, Code313);
+
+impl std::fmt::Display for Code {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Code::V310(code) => write!(f, "{}", code),
+            Code::V311(code) => write!(f, "{}", code),
+            Code::V312(code) => write!(f, "{}", code),
+            Code::V313(code) => write!(f, "{}", code),
+        }
+    }
+}
