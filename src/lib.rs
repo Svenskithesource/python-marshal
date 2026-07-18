@@ -63,7 +63,7 @@ pub enum Kind {
 
 bitflags! {
     /// Represents the flags that can be set on a code object.
-    #[derive(Clone, Debug, PartialEq)]
+    #[derive(Clone, Copy, Debug, PartialEq)]
     pub struct CodeFlags: u32 {
         const OPTIMIZED                   = 0x1;
         const NEWLOCALS                   = 0x2;
